@@ -27,12 +27,6 @@ const OBRA={nombre:'Edificio multifamiliar Los Cedros',cliente:'Inversiones Del 
   {n:'Licencia de edificación',c:'Permiso',f:'05/03/2026',v:1},
   {n:'Planos estructurales',c:'Plano',f:'05/03/2026',v:1},
   {n:'Cotización de acero',c:'Otro',f:'12/08/2026',v:0}]};
-const PERS=[{n:'Rómulo Ccahuana Ayala',d:'41258963',e:'Maestro de Obra',j:180,s:'Activo',dc:'Vigente'},
- {n:'Elmer Huatuco Rojas',d:'44870125',e:'Operario',j:160,s:'Activo',dc:'Vigente'},
- {n:'Julio Ramos Bellido',d:'40219974',e:'Oficial',j:140,s:'Activo',dc:'Por vencer'},
- {n:'Wilmer Tapia Sulca',d:'47336208',e:'Ayudante',j:110,s:'Activo',dc:'Vigente'},
- {n:'Saúl Quinto Palomino',d:'09884471',e:'Operario',j:160,s:'Activo',dc:'Vencido'},
- {n:'Nilo Achahui Mamani',d:'46012558',e:'Peón',j:95,s:'Inactivo',dc:'Por vencer'}];
 const PROY=[{n:'Edificio multifamiliar Los Cedros',c:'Inversiones Del Río S.A.C.',e:'En Ejecución',a:47},
  {n:'Remodelación oficinas Miraflores',c:'Estudio Vargas & Asoc.',e:'En Ejecución',a:78},
  {n:'Ampliación almacén Lurín',c:'Comercial Pacífico E.I.R.L.',e:'En Ejecución',a:12},

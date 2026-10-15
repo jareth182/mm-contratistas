@@ -12,6 +12,11 @@ namespace MymContratistas.Api.Models
         public string EstadoSctr { get; set; } = "Vigente"; // Vigente, Por vencer, Vencido
         public string FechaIngresoObra { get; set; } = string.Empty;
 
+        // Ficha del personal (HU10); permite conservar su historial de obras
+        public int? TrabajadorId { get; set; }
+        [JsonIgnore]
+        public Trabajador? Trabajador { get; set; }
+
         // Relación con Obra
         public int? ObraId { get; set; }
         [JsonIgnore]

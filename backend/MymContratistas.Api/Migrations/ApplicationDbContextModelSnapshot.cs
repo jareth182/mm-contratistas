@@ -119,9 +119,14 @@ namespace MymContratistas.Api.Migrations
                     b.Property<int?>("ObraId")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("TrabajadorId")
+                        .HasColumnType("integer");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ObraId");
+
+                    b.HasIndex("TrabajadorId");
 
                     b.ToTable("Cuadrilla");
                 });
@@ -576,6 +581,53 @@ namespace MymContratistas.Api.Migrations
                     b.ToTable("SolicitudesCotizacion");
                 });
 
+            modelBuilder.Entity("MymContratistas.Api.Models.Trabajador", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Apellidos")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Documento")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Especialidad")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("JornalDiario")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("Nombres")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Telefono")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("TipoDocumento")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Documento")
+                        .IsUnique();
+
+                    b.ToTable("Personal", (string)null);
+                });
+
             modelBuilder.Entity("MymContratistas.Api.Models.Usuario", b =>
                 {
                     b.Property<int>("Id")
@@ -651,7 +703,14 @@ namespace MymContratistas.Api.Migrations
                         .WithMany("Cuadrilla")
                         .HasForeignKey("ObraId");
 
+                    b.HasOne("MymContratistas.Api.Models.Trabajador", "Trabajador")
+                        .WithMany()
+                        .HasForeignKey("TrabajadorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Obra");
+
+                    b.Navigation("Trabajador");
                 });
 
             modelBuilder.Entity("MymContratistas.Api.Models.Documento", b =>

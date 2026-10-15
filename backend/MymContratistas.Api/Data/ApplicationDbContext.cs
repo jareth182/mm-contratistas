@@ -20,6 +20,7 @@ namespace MymContratistas.Api.Data // <-- Aquí estaba el detalle
         public DbSet<ImagenProyecto> ImagenesPortafolio { get; set; }
         public DbSet<Cliente> Clientes { get; set; }
         public DbSet<Servicio> Servicios { get; set; }
+        public DbSet<Trabajador> Personal { get; set; }
         public DbSet<SolicitudCotizacion> SolicitudesCotizacion { get; set; }
         public DbSet<AdjuntoCotizacion> AdjuntosCotizacion { get; set; }
 
@@ -35,6 +36,9 @@ namespace MymContratistas.Api.Data // <-- Aquí estaba el detalle
             modelBuilder.Entity<ProyectoPortafolio>()
                 .HasOne(p => p.Servicio).WithMany().HasForeignKey(p => p.ServicioId).OnDelete(DeleteBehavior.SetNull);
             modelBuilder.Entity<Cliente>().HasIndex(c => c.Documento).IsUnique();
+            modelBuilder.Entity<Trabajador>().ToTable("Personal").HasIndex(t => t.Documento).IsUnique();
+            modelBuilder.Entity<Colaborador>()
+                .HasOne(c => c.Trabajador).WithMany().HasForeignKey(c => c.TrabajadorId).OnDelete(DeleteBehavior.Restrict);
             modelBuilder.Entity<SolicitudCotizacion>().HasIndex(c => c.Codigo).IsUnique();
             modelBuilder.Entity<SolicitudCotizacion>()
                 .HasOne(c => c.Servicio).WithMany().HasForeignKey(c => c.ServicioId).OnDelete(DeleteBehavior.SetNull);

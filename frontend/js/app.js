@@ -3,7 +3,7 @@ ST.usuario = (sesionLeer() || {}).usuario || null;
 ST.perfil = ST.usuario ? (ST.usuario.rol === 'Cliente' ? 'cli' : 'adm') : 'pub';
 
 /* ================= control ================= */
-function go(v){ST.formUsuario=null;ST.formServicio=null;ST.formHito=null;ST.formProyecto=null;ST.formObra=null;ST.finalizando=false;ST.v=v;ST.msg=null;ST.menu=null;ST.nav=false;draw();window.scrollTo({top:0})}
+function go(v){ST.formUsuario=null;ST.formTrabajador=null;ST.formServicio=null;ST.formHito=null;ST.formProyecto=null;ST.formObra=null;ST.finalizando=false;ST.v=v;ST.msg=null;ST.menu=null;ST.nav=false;draw();window.scrollTo({top:0})}
 function abrirObra(id){ST.obraId=id;ST.formHito=null;ST.hitoEditando=null;ST.tab='hitos';go('obra')}
 function tab(t){ST.tab=t;ST.msg=null;draw()}
 function tog(m,e){e.stopPropagation();ST.menu=ST.menu===m?null:m;draw()}
@@ -372,23 +372,19 @@ async function actualizarAvanceDesdeFormulario(hitoId) {
 // --- CUADRILLA ---
 
 async function asignarColaborador(obraId) {
-  const nombre = document.getElementById('nuevo_colab_nombre').value;
-  const especialidad = document.getElementById('nuevo_colab_esp').value;
+  const trabajadorId = document.getElementById('nuevo_colab_trabajador').value;
   const jornalStr = document.getElementById('nuevo_colab_jornal').value;
 
-  if (!nombre || !jornalStr) {
-    say('bad', 'El nombre y el jornal son obligatorios.');
-    return;
-  }
+  if (!trabajadorId) return say('bad', 'Seleccione un colaborador activo.');
+  if (jornalStr && !(parseFloat(jornalStr) > 0)) return say('bad', 'Ingrese un jornal válido o deje el campo vacío para usar el de su ficha.');
 
   const hoy = new Date();
   const fechaActual = hoy.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
+  // Nombre, documento y especialidad los completa el servidor desde la ficha del colaborador
   const nuevoColaborador = {
-    nombreCompleto: nombre,
-    dni: "00000000",
-    especialidad: especialidad,
-    jornal: parseFloat(jornalStr),
+    trabajadorId: parseInt(trabajadorId),
+    jornal: jornalStr ? parseFloat(jornalStr) : 0,
     estadoSctr: "Vigente",
     fechaIngresoObra: fechaActual
   };
@@ -402,9 +398,8 @@ async function asignarColaborador(obraId) {
 
     if (respuesta.ok) {
       say('ok', 'Colaborador asignado correctamente a la cuadrilla.');
-      draw(); 
-    } else {
-      say('bad', 'Ocurrió un error al asignar el colaborador.');
+    } else if (respuesta.status !== 401) {
+      say('bad', esc(await respuesta.text()) || 'Ocurrió un error al asignar el colaborador.');
     }
   } catch (error) {
     say('bad', 'Error de conexión con el servidor.');
@@ -1452,6 +1447,90 @@ async function enviarCotizacion() {
     }
   } catch (e) {
     say('bad', 'Error de conexión con el servidor. Intente nuevamente en unos minutos.');
+  }
+}
+
+// --- PERSONAL (HU-10) ---
+
+function filtrarPersonal() {
+  const texto = document.getElementById('buscar_personal').value.trim().toLowerCase();
+  const lista = (ST.personalCache || []).filter(t =>
+    !texto || t.nombreCompleto.toLowerCase().includes(texto) || t.documento.toLowerCase().startsWith(texto) || t.especialidad.toLowerCase().includes(texto));
+  document.getElementById('tabla_personal').innerHTML = filasPersonal(lista);
+}
+
+function nuevoTrabajador() {
+  ST.formTrabajador = { id: null, nombres: '', apellidos: '', tipoDocumento: 'DNI', documento: '', especialidad: '', telefono: '', jornalDiario: '' };
+  ST.msg = null;
+  draw();
+  setTimeout(() => { const f = document.getElementById('form_trabajador'); if (f) f.scrollIntoView({ behavior: 'smooth' }); }, 50);
+}
+
+function editarTrabajador(id) {
+  const t = (ST.personalCache || []).find(x => x.id === id);
+  if (!t) return;
+  ST.formTrabajador = { ...t };
+  ST.msg = null;
+  draw();
+  setTimeout(() => { const f = document.getElementById('form_trabajador'); if (f) f.scrollIntoView({ behavior: 'smooth' }); }, 50);
+}
+
+function cancelarTrabajador() {
+  ST.formTrabajador = null;
+  ST.msg = null;
+  draw();
+}
+
+async function guardarTrabajador() {
+  const f = ST.formTrabajador;
+  // Se conserva lo escrito por si hay que volver a mostrar el formulario con un error
+  f.nombres = document.getElementById('trab_nombres').value.trim();
+  f.apellidos = document.getElementById('trab_apellidos').value.trim();
+  f.tipoDocumento = document.getElementById('trab_tipo').value;
+  f.documento = document.getElementById('trab_documento').value.trim();
+  f.especialidad = document.getElementById('trab_especialidad').value;
+  f.telefono = document.getElementById('trab_telefono').value.trim();
+  f.jornalDiario = document.getElementById('trab_jornal').value;
+
+  if (!f.nombres || !f.apellidos) return say('bad', 'Los nombres y apellidos son obligatorios.');
+  if (f.tipoDocumento === 'DNI' && !/^\d{8}$/.test(f.documento)) return say('bad', 'El DNI debe tener 8 dígitos.');
+  if (f.tipoDocumento === 'CE' && !/^[A-Za-z0-9]{9,12}$/.test(f.documento)) return say('bad', 'El carné de extranjería debe tener entre 9 y 12 caracteres.');
+  if (!f.especialidad) return say('bad', 'Seleccione una especialidad.');
+  if (!(parseFloat(f.jornalDiario) > 0)) return say('bad', 'Ingrese un jornal diario válido.');
+
+  try {
+    const respuesta = await apiFetch(f.id ? `${API}/api/personal/${f.id}` : `${API}/api/personal`, {
+      method: f.id ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombres: f.nombres, apellidos: f.apellidos, tipoDocumento: f.tipoDocumento, documento: f.documento,
+        especialidad: f.especialidad, telefono: f.telefono, jornalDiario: parseFloat(f.jornalDiario) })
+    });
+    const data = await respuesta.json();
+    if (respuesta.ok) {
+      ST.formTrabajador = null;
+      say('ok', data.mensaje);
+    } else if (respuesta.status !== 401) {
+      say('bad', data.mensaje || 'No se pudo guardar el colaborador.');
+    }
+  } catch (e) {
+    say('bad', 'Error de conexión con el servidor.');
+  }
+}
+
+async function cambiarEstadoTrabajador(id, activar) {
+  const t = (ST.personalCache || []).find(x => x.id === id);
+  if (!activar && !confirm(`¿Desactivar a ${t ? t.nombreCompleto : 'este colaborador'}? No aparecerá en las listas de asignación, pero se conservan su ficha e historial.`)) return;
+  try {
+    const respuesta = await apiFetch(`${API}/api/personal/${id}/estado`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ activo: activar })
+    });
+    const data = await respuesta.json();
+    if (respuesta.ok) say('ok', data.mensaje);
+    else if (respuesta.status !== 401) say('bad', data.mensaje || 'No se pudo cambiar el estado.');
+  } catch (e) {
+    say('bad', 'Error de conexión con el servidor.');
   }
 }
 

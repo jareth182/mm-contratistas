@@ -371,17 +371,70 @@ V['servicios-adm']=async()=>{
   </tbody></table></div>${form}</div>`;
 };
 
-V.personal=()=>`${navbar()}${crumbs([['Personal']])}
- <div class="page"><div class="phead"><div><h1>Personal</h1><p>Colaboradores de obra con su especialidad, jornal y estado de la documentación obligatoria.</p></div>
-  <button class="btn">Nuevo colaborador</button></div>
+const ESPECIALIDADES=['Maestro de Obra','Operario','Oficial','Ayudante','Peón'];
+
+// Filas del listado de personal; se vuelven a pintar al escribir en el buscador sin redibujar la página
+function filasPersonal(lista){
+  return lista.map(t=>`<tr><td><b>${esc(t.nombreCompleto)}</b></td><td>${esc(t.tipoDocumento)} ${esc(t.documento)}</td>
+   <td>${esc(t.especialidad)}</td><td>${esc(t.telefono)||'—'}</td><td class="num">${S(t.jornalDiario)}</td>
+   <td>${t.estado==='Activo'?'<span class="tg ok">Activo</span>':'<span class="tg mt">Inactivo</span>'}</td>
+   <td style="width:170px;white-space:nowrap"><button class="btn link" onclick="editarTrabajador(${t.id})">Editar</button> ·
+    ${t.estado==='Activo'?`<button class="btn link" onclick="cambiarEstadoTrabajador(${t.id},false)">Desactivar</button>`
+      :`<button class="btn link" onclick="cambiarEstadoTrabajador(${t.id},true)">Activar</button>`}</td></tr>`).join('')
+    ||'<tr><td colspan="7" style="text-align:center;color:var(--concrete)">No hay colaboradores que coincidan.</td></tr>';
+}
+
+V.personal=async()=>{
+  let personal=[],error=false;
+  try{
+    const r=await apiFetch(`${API}/api/personal`);
+    if(!r.ok) throw new Error();
+    personal=await r.json();
+  }catch(e){ error=true; }
+  ST.personalCache=personal;
+  const activos=personal.filter(t=>t.estado==='Activo').length;
+
+  const f=ST.formTrabajador;
+  let historial='';
+  if(f&&f.id){
+    try{
+      const r=await apiFetch(`${API}/api/personal/${f.id}/historial`);
+      const obras=r.ok?await r.json():[];
+      historial=`<div class="card" style="margin-top:16px"><div class="ch"><h4>Historial de obras asignadas</h4></div>
+       <table><thead><tr><th>Obra</th><th>Especialidad</th><th class="num">Jornal</th><th>Ingreso</th></tr></thead><tbody>
+       ${obras.map(o=>`<tr><td>${o.obraId?`<button class="btn link" onclick="abrirObra(${o.obraId})">${esc(o.obra)}</button>`:esc(o.obra)}
+         ${o.estadoObra==='Finalizado'?' <span class="tg mt">Finalizada</span>':''}</td>
+         <td>${esc(o.especialidad)}</td><td class="num">${S(o.jornal)}</td><td>${esc(o.fechaIngreso)}</td></tr>`).join('')
+         ||'<tr><td colspan="4" style="text-align:center;color:var(--concrete)">Aún no ha sido asignado a ninguna obra.</td></tr>'}
+       </tbody></table></div>`;
+    }catch(e){ /* sin historial */ }
+  }
+  const form=f?`<div class="card" style="margin-top:20px" id="form_trabajador"><div class="ch"><h4>${f.id?'Editar colaborador':'Nuevo colaborador'}</h4></div><div class="cb">
+    <div class="g2"><div class="f"><label>Nombres</label><input id="trab_nombres" value="${esc(f.nombres)}"></div>
+     <div class="f"><label>Apellidos</label><input id="trab_apellidos" value="${esc(f.apellidos)}"></div>
+     <div class="g2" style="gap:0 12px"><div class="f"><label>Documento</label><select id="trab_tipo">
+       <option ${f.tipoDocumento==='DNI'?'selected':''}>DNI</option><option value="CE" ${f.tipoDocumento==='CE'?'selected':''}>CE</option></select></div>
+      <div class="f"><label>Número</label><input id="trab_documento" value="${esc(f.documento)}" inputmode="numeric"></div></div>
+     <div class="f"><label>Especialidad</label><select id="trab_especialidad"><option value="">Seleccione</option>
+       ${ESPECIALIDADES.map(e=>`<option ${f.especialidad===e?'selected':''}>${e}</option>`).join('')}</select></div>
+     <div class="f"><label>Teléfono</label><input id="trab_telefono" type="tel" value="${esc(f.telefono)}" placeholder="987 654 321"></div>
+     <div class="f"><label>Jornal diario (S/)</label><input id="trab_jornal" type="number" min="1" step="0.01" value="${esc(f.jornalDiario)}"></div></div>
+    <button class="btn" onclick="guardarTrabajador()">${f.id?'Guardar cambios':'Registrar colaborador'}</button>
+    <button class="btn ghost" style="margin-left:8px" onclick="cancelarTrabajador()">Cancelar</button>
+    ${historial}
+   </div></div>`:'';
+
+  return `${navbar()}${crumbs([['Personal']])}
+ <div class="page"><div class="phead"><div><h1>Personal</h1><p>Colaboradores de obra con su documento, especialidad y jornal diario.</p></div>
+  <button class="btn" onclick="nuevoTrabajador()">Nuevo colaborador</button></div>
   ${ST.hu?'<div class="cota"><span class="t"></span><span class="b"></span><span class="r"></span><span class="hu">HU10</span></div>':''}
-  <div class="card"><div class="ch"><input placeholder="Buscar por nombre o especialidad" style="flex:1;max-width:320px;padding:6px 10px;border:1px solid var(--line);font-family:var(--b)">
-   <span class="hint">6 registrados · 5 activos</span></div>
-  <table><thead><tr><th>Nombres y apellidos</th><th>Documento</th><th>Especialidad</th><th class="num">Jornal</th><th>Documentación</th><th>Estado</th></tr></thead><tbody>
-  ${PERS.map(p=>`<tr><td><button class="btn link" onclick="go('docpers')"><b>${p.n}</b></button></td><td>${p.d}</td><td>${p.e}</td>
-   <td class="num">${S(p.j)}</td><td>${dt(p.dc)}</td>
-   <td>${p.s==='Activo'?'<span class="tg ok">Activo</span>':'<span class="tg mt">Inactivo</span>'}</td></tr>`).join('')}
-  </tbody></table></div></div>`;
+  ${ST.msg||''}
+  <div class="card"><div class="ch"><input id="buscar_personal" placeholder="Buscar por nombre, documento o especialidad" oninput="filtrarPersonal()" style="flex:1;max-width:320px;padding:6px 10px;border:1px solid var(--line);font-family:var(--b)">
+   <span class="hint">${personal.length} registrados · ${activos} activos</span></div>
+  <div style="overflow-x:auto"><table><thead><tr><th>Nombres y apellidos</th><th>Documento</th><th>Especialidad</th><th>Teléfono</th><th class="num">Jornal</th><th>Estado</th><th></th></tr></thead>
+  <tbody id="tabla_personal">${error?'<tr><td colspan="7" style="text-align:center;color:var(--rust)">Error al cargar el personal desde el servidor.</td></tr>':filasPersonal(personal)}</tbody></table></div></div>
+  ${form}</div>`;
+};
 
 V.docpers=()=>`${navbar()}${crumbs([['Personal','personal'],['Julio Ramos Bellido']])}
  <div class="page"><div class="phead"><div><h1>Julio Ramos Bellido</h1>
@@ -621,6 +674,11 @@ TC.hitos = async () => {
 TC.cuad = async () => {
   let filas = '';
   let total = 0;
+  let disponibles = [];
+  try {
+    const rp = await apiFetch(`${API}/api/personal?soloActivos=true`);
+    if (rp.ok) disponibles = await rp.json();
+  } catch (e) { /* la lista queda vacía */ }
   try {
     const respuesta = await apiFetch(API + '/api/obras');
     const obras = await respuesta.json();
@@ -647,11 +705,11 @@ TC.cuad = async () => {
   return `
    <div class="card" style="margin-bottom:20px"><div class="ch"><h4>Asignar nuevo colaborador</h4></div><div class="cb">
     <div class="g3">
-     <div class="f"><label>Nombres y apellidos</label><input id="nuevo_colab_nombre" placeholder="Ej. Juan Pérez"></div>
-     <div class="f"><label>Especialidad</label><select id="nuevo_colab_esp">
-      <option>Maestro de Obra</option><option>Operario</option><option>Oficial</option><option>Ayudante</option><option>Peón</option>
-     </select></div>
-     <div class="f"><label>Jornal diario (S/)</label><input id="nuevo_colab_jornal" type="number" placeholder="120"></div>
+     <div class="f"><label>Colaborador</label><select id="nuevo_colab_trabajador">
+      <option value="">${disponibles.length ? 'Seleccione un colaborador activo' : 'No hay colaboradores activos registrados'}</option>
+      ${disponibles.map(t => `<option value="${t.id}">${esc(t.nombreCompleto)} · ${esc(t.especialidad)} · ${S(t.jornalDiario)}</option>`).join('')}
+     </select><div class="hint" style="margin-top:4px">Solo aparecen los colaboradores activos de <button class="btn link" onclick="go('personal')">Personal</button>.</div></div>
+     <div class="f"><label>Jornal en esta obra (S/)</label><input id="nuevo_colab_jornal" type="number" placeholder="Según su ficha"></div>
     </div>
     <button class="btn sm" onclick="asignarColaborador(${ST.obraId})">Asignar colaborador</button>
    </div></div>
