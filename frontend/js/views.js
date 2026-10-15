@@ -91,12 +91,25 @@ V.login=()=>`${navbar()}
   </div></div></div>${pie()}`;
 
 V.recuperar=()=>`${navbar()}
- <div class="page" style="max-width:430px;padding-top:50px"><div class="phead"><div><h1>Recuperar contraseña</h1>
-  <p>Le enviaremos un enlace para crear una contraseña nueva. El enlace vence en 24 horas.</p></div>${ST.hu?'<span class="hu">HU03</span>':''}</div>
-  ${ST.msg||''}
-  <div class="card"><div class="cb"><div class="f"><label>Correo electrónico</label><input placeholder="nombre@correo.com"></div>
-   <button class="btn" style="width:100%" onclick="say('ok','Si el correo se encuentra registrado, recibirá un enlace de recuperación en los próximos minutos.')">Enviar enlace</button>
-   <button class="btn link" style="margin-top:11px" onclick="go('login')">Volver a ingresar</button>
+ <div class="page" style="max-width:430px;padding-top:50px"><div class="phead"><div><h1>Recuperar Contraseña</h1>
+  <p>Ingrese su correo para enviarle un enlace de restablecimiento.</p></div></div>
+  ${ST.msg || ''} 
+  <div class="card"><div class="cb">
+   <div class="f"><label>Correo electrónico</label><input id="rec_correo" placeholder="ejemplo@mym.pe"></div>
+   <button type="button" class="btn" style="width:100%" onclick="enviarEnlace()">Enviar Enlace</button>
+   <div style="display:flex;justify-content:center;margin-top:12px">
+     <button type="button" class="btn link" onclick="go('login')">Volver al inicio</button>
+   </div>
+  </div></div></div>${pie()}`;
+
+V.nueva_password=()=>`${navbar()}
+ <div class="page" style="max-width:430px;padding-top:50px"><div class="phead"><div><h1>Nueva Contraseña</h1>
+  <p>Cree una nueva contraseña para su cuenta.</p></div></div>
+  <div class="card"><div class="cb">
+   <input type="hidden" id="reset_token" value="${ST.token_temp || ''}">
+   <div class="f"><label>Nueva Contraseña</label><input type="password" id="reset_pass1"></div>
+   <div class="f"><label>Confirmar Contraseña</label><input type="password" id="reset_pass2"></div>
+   <button class="btn" style="width:100%" onclick="guardarNuevaContrasena()">Guardar</button>
   </div></div></div>${pie()}`;
 
 /* ---- admin ---- */

@@ -2,6 +2,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MymContratistas.Api.Models;
 using MymContratistas.Api.Data;
+using System.Net;
+using System.Net.Mail;
+
 namespace MymContratistas.Api.Controllers
 {
     [Route("api/[controller]")]
@@ -20,23 +23,19 @@ namespace MymContratistas.Api.Controllers
         {
             var usuario = await _context.Usuarios.FirstOrDefaultAsync(u => u.Correo == login.Correo);
 
-            // 1. Si no existe el correo
             if (usuario == null)
                 return Unauthorized(new { mensaje = "Usuario o contraseña incorrectos." });
 
-            // 2. Si fue desactivado por la empresa
             if (usuario.Estado == "Inactivo")
                 return Unauthorized(new { mensaje = "Su cuenta se encuentra desactivada." });
 
-            // 3. Verificamos si está bloqueado por múltiples intentos (HU-01 Criterio 4)
             if (usuario.BloqueoHasta.HasValue && usuario.BloqueoHasta.Value > DateTime.Now)
             {
                 var minutosRestantes = (usuario.BloqueoHasta.Value - DateTime.Now).Minutes;
-                if (minutosRestantes == 0) minutosRestantes = 1; // Para que no diga 0 minutos
+                if (minutosRestantes == 0) minutosRestantes = 1; 
                 return Unauthorized(new { mensaje = $"Cuenta bloqueada temporalmente por seguridad. Intente nuevamente en {minutosRestantes} minutos." });
             }
 
-            // 4. Verificamos que la contraseña coincida
             if (usuario.Password != login.Password)
             {
                 usuario.IntentosFallidos++;
@@ -52,12 +51,10 @@ namespace MymContratistas.Api.Controllers
                 return Unauthorized(new { mensaje = "Usuario o contraseña incorrectos." });
             }
 
-            // 5. Login exitoso: limpiamos los intentos fallidos
             usuario.IntentosFallidos = 0;
             usuario.BloqueoHasta = null;
             await _context.SaveChangesAsync();
 
-            // Devolvemos los datos básicos para que el frontend arme el menú
             return Ok(new { 
                 id = usuario.Id, 
                 nombreCompleto = usuario.NombreCompleto, 
@@ -65,26 +62,61 @@ namespace MymContratistas.Api.Controllers
                 correo = usuario.Correo
             });
         }
+
         [HttpPost("recuperar")]
         public async Task<IActionResult> RecuperarPassword([FromBody] RecuperarDto peticion)
         {
             var usuario = await _context.Usuarios.FirstOrDefaultAsync(u => u.Correo == peticion.Correo);
     
-            // Por seguridad, siempre devolvemos el mismo mensaje aunque el correo no exista (evita escaneo de correos)
             if (usuario == null) 
                 return Ok(new { mensaje = "Si el correo se encuentra registrado, recibirá un enlace de recuperación en los próximos minutos." });
 
-            // Generamos un token seguro y le damos 24 horas de vigencia (Criterio 2)
             usuario.TokenRecuperacion = Guid.NewGuid().ToString();
             usuario.TokenExpiracion = DateTime.UtcNow.AddHours(24);
             await _context.SaveChangesAsync();
 
-            // SIMULACIÓN: Como aún no conectamos un servidor de correos real (SMTP), 
-            // devolveremos el token al frontend para que puedas probar la pantalla "Nueva Contraseña".
-            return Ok(new { 
-                mensaje = "Si el correo se encuentra registrado, recibirá un enlace de recuperación en los próximos minutos.",
-                tokenSimulado = usuario.TokenRecuperacion 
-            });
+            try
+            {
+                string miCorreoGmail = "jazarelly.zapata@gmail.com"; 
+                string miClaveApp = "qtdo wwup vrcy eypb"; 
+
+                // Atrapamos la ruta invisible que mandó app.js sin errores de modelo
+                string urlFrontend = Request.Headers["Frontend-Url"].FirstOrDefault() ?? "file:///C:/Users/User/Documents/DIS/mm-contratistas/frontend/index.html";
+                string enlace = $"{urlFrontend}#nueva_password?token={usuario.TokenRecuperacion}";
+
+                MailMessage correo = new MailMessage();
+                correo.From = new MailAddress(miCorreoGmail, "Soporte M/M Contratistas");
+                correo.To.Add(usuario.Correo);
+                correo.Subject = "Restablecer Contraseña - M/M Contratistas";
+                correo.IsBodyHtml = true;
+                correo.Body = $@"
+                    <div style='font-family: Arial, sans-serif; padding: 20px; color: #333;'>
+                        <h2>Recuperación de Contraseña</h2>
+                        <p>Hola {usuario.NombreCompleto},</p>
+                        <p>Has solicitado restablecer tu contraseña. Haz clic en el siguiente enlace para crear una nueva:</p>
+                        <br>
+                        <a href='{enlace}' style='background-color: #0A1929; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;'>Cambiar mi contraseña</a>
+                        <br><br>
+                        <p>Si el botón no funciona, copia y pega esta dirección en tu navegador:</p>
+                        <p style='color: #666; font-size: 12px;'>{enlace}</p>
+                        <br>
+                        <p>Este enlace expirará en 24 horas.</p>
+                    </div>";
+
+                using (SmtpClient smtp = new SmtpClient("smtp.gmail.com", 587))
+                {
+                    smtp.Credentials = new NetworkCredential(miCorreoGmail, miClaveApp);
+                    smtp.EnableSsl = true;
+                    await smtp.SendMailAsync(correo);
+                }
+
+                return Ok(new { mensaje = "Si el correo se encuentra registrado, recibirá un enlace de recuperación en los próximos minutos." });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("ERROR SMTP: " + ex.Message);
+                return StatusCode(500, new { mensaje = "Hubo un problema de conexión al intentar enviar el correo." });
+            }
         }
 
         [HttpPost("restablecer")]
@@ -95,12 +127,10 @@ namespace MymContratistas.Api.Controllers
             if (usuario == null || usuario.TokenExpiracion < DateTime.UtcNow)
                 return BadRequest(new { mensaje = "El enlace de recuperación es inválido o ha expirado." });
 
-            // Actualizamos la contraseña y destruimos el token
             usuario.Password = peticion.NuevaPassword;
             usuario.TokenRecuperacion = null;
             usuario.TokenExpiracion = null;
     
-            // Si la cuenta estaba bloqueada (HU-01), al cambiar la clave la desbloqueamos
             usuario.IntentosFallidos = 0;
             usuario.BloqueoHasta = null;
 

@@ -1,3 +1,11 @@
+// Solo actualizamos la variable ST que ya viene de views.js
+ST.usuario = null;
+ST.perfil = 'pub';
+
+// Si no hay una vista definida al cargar, lo mandamos al login (o home)
+if (!ST.v) {
+  ST.v = 'login'; 
+}
 /* ================= control ================= */
 function go(v){ST.v=v;ST.msg=null;ST.menu=null;ST.nav=false;draw();window.scrollTo({top:0})}
 function tab(t){ST.tab=t;ST.msg=null;draw()}
@@ -515,7 +523,6 @@ function descargarConstancia(pagoId) {
   window.open(`http://localhost:5067/api/obras/pagos/${pagoId}/descargar`, '_blank');
 }
 
-// Función para auto-formatear el periodo de pago
 function formatearPeriodo(input) {
   let v = input.value.replace(/\D/g, ''); 
   if (v.length > 8) v = v.substring(0, 8); 
@@ -529,8 +536,6 @@ function formatearPeriodo(input) {
   input.value = out;
 }
 
-// --- CONTROL ECONÓMICO (EXPORTAR) ---
-
 // --- CONTROL ECONÓMICO (EXPORTAR CON FORMATO EXCEL) ---
 
 function exportarControlEconomico() {
@@ -540,7 +545,6 @@ function exportarControlEconomico() {
     return;
   }
 
-  // 1. Creamos la estructura base de un archivo Excel soportando estilos HTML
   let html = `
     <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
     <head>
@@ -557,10 +561,8 @@ function exportarControlEconomico() {
       <table>
   `;
 
-  // 2. Extraemos las filas de tu tabla en la pantalla
   const filas = tablaOriginal.querySelectorAll('tr');
   filas.forEach((fila, index) => {
-    // Detectamos si es la última fila (la de totales)
     const esTotal = fila.innerText.includes('Total') && index > 0;
     html += `<tr class="${esTotal ? 'total' : ''}">`;
     
@@ -581,7 +583,6 @@ function exportarControlEconomico() {
     </html>
   `;
 
-  // 3. Generamos el archivo .xls y forzamos la descarga
   const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
   const url = window.URL.createObjectURL(blob);
   
@@ -596,7 +597,8 @@ function exportarControlEconomico() {
   document.body.removeChild(a);
   window.URL.revokeObjectURL(url);
 }
-// --- AUTENTICACIÓN (HU-01) ---
+
+// --- AUTENTICACIÓN (HU-01 y HU-03) ---
 
 async function iniciarSesion() {
   const correo = document.getElementById('login_correo').value;
@@ -617,17 +619,14 @@ async function iniciarSesion() {
     const data = await respuesta.json();
 
     if (respuesta.ok) {
-      // 1. Guardamos al usuario de forma global en Javascript (para la HU-02)
       ST.usuario = data;
       
-      // 2. Redirección según rol (Criterio de Aceptación 2)
       if (data.rol === 'Cliente') {
         perfil('cli', 'c-obra');
       } else {
         perfil('adm', 'tablero');
       }
     } else {
-      // Si la contraseña está mal o la cuenta se bloqueó, el backend manda un "mensaje" (Criterio 4)
       say('bad', data.mensaje);
     }
   } catch (error) {
@@ -635,10 +634,75 @@ async function iniciarSesion() {
   }
 }
 
+async function enviarEnlace() {
+  const correo = document.getElementById('rec_correo').value;
+  if (!correo) return say('bad', 'Ingrese un correo electrónico válido.');
+
+  // Captura la ruta sin importar en qué computadora estés
+  const urlBase = window.location.href.split('#')[0]; 
+
+  try {
+    const res = await fetch('http://localhost:5067/api/auth/recuperar', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Frontend-Url': urlBase // Lo enviamos oculto por aquí para no romper C#
+      },
+      body: JSON.stringify({ correo: correo }) 
+    });
+    
+    const data = await res.json();
+    if (res.ok) {
+      say('ok', data.mensaje);
+    } else {
+      say('bad', data.mensaje);
+    }
+  } catch (e) {
+    say('bad', 'Error al conectar con el servidor.');
+  }
+}
+
+async function guardarNuevaContrasena() {
+  // 1. Extraemos el token secreto directamente de la URL que abrió el correo
+  let token = "";
+  if (window.location.hash.includes('?token=')) {
+    token = window.location.hash.split('?token=')[1];
+  } else {
+    token = document.getElementById('reset_token')?.value; 
+  }
+
+  const pass1 = document.getElementById('reset_pass1').value;
+  const pass2 = document.getElementById('reset_pass2').value;
+
+  if (!token) return say('bad', 'No se encontró el código de seguridad. Por favor, abra el enlace desde su correo.');
+  if (pass1.length < 8) return say('bad', 'La contraseña debe tener al menos 8 caracteres.');
+  if (pass1 !== pass2) return say('bad', 'Las contraseñas no coinciden.');
+
+  try {
+    const res = await fetch('http://localhost:5067/api/auth/restablecer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: token, nuevaPassword: pass1 })
+    });
+    const data = await res.json();
+
+    if (res.ok) {
+      say('ok', 'Contraseña actualizada correctamente. Redirigiendo...');
+      setTimeout(() => go('login'), 2000);
+    } else {
+      say('bad', data.mensaje);
+    }
+  } catch (e) {
+    say('bad', 'Error de conexión.');
+  }
+}
+
 // --- ARRANQUE ---
 
 document.addEventListener('click',()=>{if(ST.menu){ST.menu=null;draw()}});
-const h=location.hash.replace('#','');
+let h = location.hash.replace('#','');
+if (h.includes('?')) h = h.split('?')[0]; // Separa el token para que el sistema reconozca la vista
+
 if(h&&V[h]){ST.v=h;ST.perfil=h.startsWith('c-')?'cli':['tablero','proyectos','obra','personal','docpers','alertas','usuarios','portafolio','servicios-adm'].includes(h)?'adm':'pub'}
 
 // Arrancar la plataforma
