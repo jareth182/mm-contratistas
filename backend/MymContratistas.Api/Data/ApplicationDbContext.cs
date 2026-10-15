@@ -16,6 +16,8 @@ namespace MymContratistas.Api.Data // <-- Aquí estaba el detalle
         public DbSet<Pago> Pagos { get; set; }
         public DbSet<Usuario> Usuarios { get; set; }
         public DbSet<Rol> Roles { get; set; }
+        public DbSet<ProyectoPortafolio> Portafolio { get; set; }
+        public DbSet<ImagenProyecto> ImagenesPortafolio { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -23,6 +25,9 @@ namespace MymContratistas.Api.Data // <-- Aquí estaba el detalle
             modelBuilder.Entity<Rol>().HasIndex(r => r.Nombre).IsUnique();
             modelBuilder.Entity<Usuario>()
                 .HasOne(u => u.Rol).WithMany().HasForeignKey(u => u.RolId).OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ProyectoPortafolio>()
+                .HasMany(p => p.Imagenes).WithOne(i => i.Proyecto).HasForeignKey(i => i.ProyectoPortafolioId).OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<Rol>().HasData(
                 new Rol { Id = 1, Nombre = NombresRol.Administrador },

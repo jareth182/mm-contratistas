@@ -195,6 +195,35 @@ namespace MymContratistas.Api.Migrations
                     b.ToTable("Hitos");
                 });
 
+            modelBuilder.Entity("MymContratistas.Api.Models.ImagenProyecto", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Archivo")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<bool>("EsPrincipal")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("NombreOriginal")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("ProyectoPortafolioId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProyectoPortafolioId");
+
+                    b.ToTable("ImagenesPortafolio");
+                });
+
             modelBuilder.Entity("MymContratistas.Api.Models.Obra", b =>
                 {
                     b.Property<int>("Id")
@@ -286,6 +315,42 @@ namespace MymContratistas.Api.Migrations
                     b.HasIndex("ObraId");
 
                     b.ToTable("Partidas");
+                });
+
+            modelBuilder.Entity("MymContratistas.Api.Models.ProyectoPortafolio", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Anio")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Descripcion")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("TipoObra")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Ubicacion")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Portafolio");
                 });
 
             modelBuilder.Entity("MymContratistas.Api.Models.Rol", b =>
@@ -425,6 +490,17 @@ namespace MymContratistas.Api.Migrations
                     b.Navigation("Obra");
                 });
 
+            modelBuilder.Entity("MymContratistas.Api.Models.ImagenProyecto", b =>
+                {
+                    b.HasOne("MymContratistas.Api.Models.ProyectoPortafolio", "Proyecto")
+                        .WithMany("Imagenes")
+                        .HasForeignKey("ProyectoPortafolioId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Proyecto");
+                });
+
             modelBuilder.Entity("MymContratistas.Api.Models.Pago", b =>
                 {
                     b.HasOne("MymContratistas.Api.Models.Obra", "Obra")
@@ -471,6 +547,11 @@ namespace MymContratistas.Api.Migrations
                     b.Navigation("Pagos");
 
                     b.Navigation("Partidas");
+                });
+
+            modelBuilder.Entity("MymContratistas.Api.Models.ProyectoPortafolio", b =>
+                {
+                    b.Navigation("Imagenes");
                 });
 #pragma warning restore 612, 618
         }
