@@ -32,7 +32,7 @@ async function draw(){
   guardarAcceso();
   const vista = V[ST.v] || V.home;
   document.getElementById('app').innerHTML = await vista();
-  location.hash = ST.v;
+  location.hash = ST.v === 'obra-pub' && ST.proyectoPubId ? `obra-pub?id=${ST.proyectoPubId}` : ST.v;
   cargarImagenesProtegidas();
 }
 
@@ -1201,6 +1201,60 @@ async function eliminarImagenProyecto(imagenId) {
   }
 }
 
+// --- PORTAFOLIO PÚBLICO (HU-05) ---
+
+function verProyectoPublico(id) {
+  ST.proyectoPubId = id;
+  go('obra-pub');
+}
+
+// Galería ampliada con navegación (botones, flechas del teclado y Esc)
+function abrirGaleria(indice) {
+  if (!ST.galeria || !ST.galeria.length) return;
+  ST.galeriaIndice = indice;
+  let capa = document.getElementById('galeria');
+  if (!capa) {
+    capa = document.createElement('div');
+    capa.id = 'galeria';
+    capa.className = 'lightbox';
+    capa.setAttribute('role', 'dialog');
+    capa.setAttribute('aria-modal', 'true');
+    capa.addEventListener('click', e => { if (e.target === capa) cerrarGaleria(); });
+    document.body.appendChild(capa);
+    document.addEventListener('keydown', teclaGaleria);
+  }
+  pintarGaleria();
+}
+
+function pintarGaleria() {
+  const capa = document.getElementById('galeria');
+  if (!capa) return;
+  const total = ST.galeria.length;
+  const actual = ST.galeria[ST.galeriaIndice];
+  capa.innerHTML = `<button class="lb-cerrar" onclick="cerrarGaleria()" aria-label="Cerrar">✕</button>
+    ${total > 1 ? '<button class="lb-nav lb-ant" onclick="moverGaleria(-1)" aria-label="Anterior">‹</button>' : ''}
+    <figure><img src="${actual.src}" alt="${esc(actual.nombre)}"><figcaption>${ST.galeriaIndice + 1} / ${total}</figcaption></figure>
+    ${total > 1 ? '<button class="lb-nav lb-sig" onclick="moverGaleria(1)" aria-label="Siguiente">›</button>' : ''}`;
+}
+
+function moverGaleria(paso) {
+  const total = ST.galeria.length;
+  ST.galeriaIndice = (ST.galeriaIndice + paso + total) % total;
+  pintarGaleria();
+}
+
+function cerrarGaleria() {
+  const capa = document.getElementById('galeria');
+  if (capa) capa.remove();
+  document.removeEventListener('keydown', teclaGaleria);
+}
+
+function teclaGaleria(e) {
+  if (e.key === 'Escape') cerrarGaleria();
+  else if (e.key === 'ArrowLeft') moverGaleria(-1);
+  else if (e.key === 'ArrowRight') moverGaleria(1);
+}
+
 // --- ARRANQUE ---
 
 document.addEventListener('click',()=>{if(ST.menu){ST.menu=null;draw()}});
@@ -1209,6 +1263,7 @@ if (h.includes('?')) {
   // El token de recuperación viaja en el enlace del correo: se guarda y se limpia la URL
   const params = new URLSearchParams(h.split('?')[1]);
   if (params.get('token')) ST.token_temp = params.get('token');
+  if (params.get('id')) ST.proyectoPubId = parseInt(params.get('id'));
   h = h.split('?')[0];
 }
 

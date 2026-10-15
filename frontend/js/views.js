@@ -1,7 +1,25 @@
 /* ================= vistas ================= */
 const V={};
 
-V.home=()=>`${navbar()}
+// Imagen pública de un proyecto publicado (no requiere sesión)
+const imgPublica=id=>`${API}/api/sitio/imagenes/${id}`;
+
+V.home=async()=>{
+  let tarjetas='';
+  try{
+    const r=await fetch(`${API}/api/sitio/proyectos`);
+    if(!r.ok) throw new Error();
+    const proyectos=await r.json();
+    tarjetas=proyectos.length?`<div class="cards">${proyectos.map(p=>`<article class="pc2">
+      <div class="im">${p.imagenPrincipalId?`<img src="${imgPublica(p.imagenPrincipalId)}" alt="${esc(p.nombre)}" loading="lazy">`:'Fotografía de obra'}</div>
+      <div class="bd"><h3>${esc(p.nombre)}</h3>
+      <div class="hint" style="margin:3px 0 10px">${esc(p.tipoObra)}${p.ubicacion?` · ${esc(p.ubicacion)}`:''} · ${p.anio}</div>
+      <button class="btn ghost sm" onclick="verProyectoPublico(${p.id})">Ver obra</button></div></article>`).join('')}</div>`
+      :'<p class="hint">Pronto publicaremos aquí nuestras obras ejecutadas.</p>';
+  }catch(e){
+    tarjetas='<div class="msg warn">No se pudo cargar el portafolio en este momento. Intente nuevamente más tarde.</div>';
+  }
+  return `${navbar()}
  <section class="hero"><div class="hgrid"></div><div class="hero-in">
    <div class="rl"><i></i>CONSTRUCCIÓN DE EDIFICIOS · LIMA</div>
    <h1>Obras que puede seguir día por día</h1>
@@ -10,26 +28,39 @@ V.home=()=>`${navbar()}
    <button class="btn ghost" style="color:#fff;border-color:#4A6072;margin-left:8px" onclick="go('servicios')">Ver servicios</button>
  </div></section>
  <div class="page">${ST.msg||''}${cota('Proyectos ejecutados','HU05')}
-  <div class="cards">${PORT.filter(p=>p.e==='Publicado').map(p=>`<article class="pc2">
-    <div class="im">Fotografía de obra</div><div class="bd"><h3>${p.n}</h3>
-    <div class="hint" style="margin:3px 0 10px">${p.t} · ${p.u} · ${p.a}</div>
-    <button class="btn ghost sm" onclick="go('obra-pub')">Ver obra</button></div></article>`).join('')}</div>
+  ${tarjetas}
  </div>${pie()}`;
+};
 
-V['obra-pub']=()=>`${navbar()}${crumbs([['Proyectos','home'],['Condominio Las Palmeras']])}
- <div class="page"><div class="phead"><div><h1>Condominio Las Palmeras</h1>
-   <p>Edificio de cinco niveles con veinte departamentos, estacionamiento en sótano y áreas comunes en azotea. Entregado dentro del plazo contratado.</p></div>
-   <button class="btn warn" onclick="go('cotizar')">Solicitar cotización</button></div>
+V['obra-pub']=async()=>{
+  let p=null;
+  if(ST.proyectoPubId){
+    try{
+      const r=await fetch(`${API}/api/sitio/proyectos/${ST.proyectoPubId}`);
+      if(r.ok) p=await r.json();
+    }catch(e){ /* se muestra el aviso de abajo */ }
+  }
+  if(!p) return `${navbar()}${crumbs([['Proyectos','home'],['Proyecto']])}
+ <div class="page"><div class="msg warn">El proyecto que busca no existe o ya no está publicado.</div>
+  <button class="btn" onclick="go('home')">Ver todos los proyectos</button></div>${pie()}`;
+
+  ST.galeria=p.imagenes.map(i=>({src:imgPublica(i.id),nombre:i.nombre}));
+  const [principal,...resto]=p.imagenes;
+  return `${navbar()}${crumbs([['Proyectos','home'],[esc(p.nombre)]])}
+ <div class="page"><div class="phead"><div><h1>${esc(p.nombre)}</h1>
+   <p>${esc(p.tipoObra)}${p.ubicacion?` · ${esc(p.ubicacion)}`:''}</p></div>
+   <button class="btn warn" onclick="go('cotizar')">Solicitar cotización</button>${ST.hu?'<span class="hu">HU05</span>':''}</div>
   <div class="g2" style="gap:26px">
-   <div><div class="th" style="width:100%;height:270px">Fotografía principal</div>
-     <div class="thumbs" style="margin-top:8px"><div class="th">Fachada</div><div class="th">Interior</div><div class="th">Azotea</div></div></div>
-   <div class="card"><table><tbody>
-     <tr><th style="width:45%">Tipo de obra</th><td>Edificio multifamiliar</td></tr>
-     <tr><th>Ubicación</th><td>Chorrillos, Lima</td></tr>
-     <tr><th>Año de ejecución</th><td>2025</td></tr>
-     <tr><th>Servicio</th><td>Construcción de edificios</td></tr>
-     <tr><th>Duración</th><td>14 meses</td></tr></tbody></table></div>
+   <div>${principal?`<button class="gal-main" onclick="abrirGaleria(0)" title="Ampliar"><img src="${imgPublica(principal.id)}" alt="${esc(principal.nombre)}"></button>
+     <div class="thumbs" style="margin-top:8px">${resto.map((i,n)=>`<button class="gal-th" onclick="abrirGaleria(${n+1})" title="Ampliar"><img src="${imgPublica(i.id)}" alt="${esc(i.nombre)}" loading="lazy"></button>`).join('')}</div>`
+     :'<div class="th" style="width:100%;height:270px">Fotografía de obra</div>'}</div>
+   <div><div class="card"><table><tbody>
+     <tr><th style="width:45%">Tipo de obra</th><td>${esc(p.tipoObra)}</td></tr>
+     <tr><th>Ubicación</th><td>${esc(p.ubicacion)||'—'}</td></tr>
+     <tr><th>Año de ejecución</th><td>${p.anio}</td></tr></tbody></table></div>
+    ${p.descripcion?`<p style="margin-top:16px;white-space:pre-line">${esc(p.descripcion)}</p>`:''}</div>
   </div></div>${pie()}`;
+};
 
 V.servicios=()=>`${navbar()}${crumbs([['Inicio','home'],['Servicios']])}
  <div class="page"><div class="phead"><div><h1>Servicios</h1>
