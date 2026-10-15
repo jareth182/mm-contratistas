@@ -199,22 +199,60 @@ V.usuarios=async()=>{
   </tbody></table></div>${form}</div>`;
 };
 
-V.portafolio=()=>`${navbar()}${crumbs([['Sitio web'],['Portafolio']])}
+const TIPOS_OBRA=['Edificio multifamiliar','Vivienda unifamiliar','Obra comercial','Obra industrial','Remodelación','Obra civil menor'];
+
+V.portafolio=async()=>{
+  let filas='',proyectos=[];
+  try{
+    const r=await apiFetch(`${API}/api/portafolio`);
+    if(!r.ok) throw new Error();
+    proyectos=await r.json();
+    ST.portafolioCache=proyectos;
+    filas=proyectos.map(p=>`<tr><td><b>${esc(p.nombre)}</b></td><td>${esc(p.tipoObra)}</td><td>${p.anio}</td>
+     <td>${p.estado==='Publicado'?'<span class="tg ok">Publicado</span>':'<span class="tg mt">Borrador</span>'}</td>
+     <td style="width:230px;white-space:nowrap"><button class="btn link" onclick="editarProyecto(${p.id})">Editar</button> ·
+      <button class="btn link" onclick="cambiarPublicacion(${p.id},${p.estado==='Publicado'?'false':'true'})">${p.estado==='Publicado'?'Despublicar':'Publicar'}</button></td></tr>`).join('')
+      ||'<tr><td colspan="5" style="text-align:center;color:var(--concrete)">Aún no hay proyectos en el portafolio.</td></tr>';
+  }catch(e){
+    filas='<tr><td colspan="5" style="text-align:center;color:var(--rust)">Error al cargar el portafolio desde el servidor.</td></tr>';
+  }
+
+  const f=ST.formProyecto;
+  const form=f?`<div class="card" style="margin-top:20px" id="form_proyecto"><div class="ch"><h4>${f.id?'Editar proyecto':'Nuevo proyecto'}</h4>
+    <span class="hint">Se guarda como borrador hasta que lo publique.</span></div><div class="cb">
+    <div class="g2"><div class="f"><label>Nombre del proyecto</label><input id="port_nombre" value="${esc(f.nombre)}" placeholder="Condominio Las Palmeras"></div>
+     <div class="f"><label>Tipo de obra</label><select id="port_tipo"><option value="">Seleccione un tipo</option>
+      ${TIPOS_OBRA.map(t=>`<option ${f.tipoObra===t?'selected':''}>${t}</option>`).join('')}</select></div>
+     <div class="f"><label>Ubicación</label><input id="port_ubicacion" value="${esc(f.ubicacion)}" placeholder="Chorrillos, Lima"></div>
+     <div class="f"><label>Año de ejecución</label><input id="port_anio" type="number" min="1990" value="${esc(f.anio)}" placeholder="2025"></div></div>
+    <div class="f"><label>Descripción</label><textarea id="port_descripcion" placeholder="Edificio de cinco niveles con veinte departamentos.">${esc(f.descripcion)}</textarea></div>
+    <button class="btn" onclick="guardarProyecto()">${f.id?'Guardar cambios':'Guardar borrador'}</button>
+    <button class="btn ghost" style="margin-left:8px" onclick="cancelarProyecto()">Cancelar</button>
+   </div></div>`:'';
+
+  // Las imágenes se gestionan sobre un proyecto ya guardado
+  const sel=f&&f.id?proyectos.find(p=>p.id===f.id):null;
+  const imagenes=sel?`<div class="card" style="margin-top:20px"><div class="ch"><h4>Imágenes · ${esc(sel.nombre)}</h4></div>
+   <div class="cb"><div class="thumbs">
+    ${sel.imagenes.map(i=>`<div class="th" style="width:150px;height:130px;padding:0;position:relative;overflow:hidden;${i.esPrincipal?'border:2px solid var(--safety)':''}">
+      <img data-img-id="${i.id}" alt="${esc(i.nombre)}" style="width:100%;height:100%;object-fit:cover">
+      <div style="position:absolute;left:0;right:0;bottom:0;background:rgba(10,25,41,.82);color:#fff;font-size:11.5px;padding:3px 5px;display:flex;justify-content:space-between;gap:4px">
+       ${i.esPrincipal?'<b>Principal</b>':`<button class="btn link" style="color:#fff;font-size:11.5px" onclick="marcarImagenPrincipal(${i.id})">Hacer principal</button>`}
+       <button class="btn link" style="color:#fff;font-size:11.5px" onclick="eliminarImagenProyecto(${i.id})">Quitar</button></div></div>`).join('')}
+    <div><input type="file" id="port_archivos" accept=".jpg,.jpeg,.png,image/jpeg,image/png" multiple style="display:none" onchange="subirImagenesProyecto(${sel.id})">
+     <button class="btn ghost sm" onclick="document.getElementById('port_archivos').click()">Subir imágenes</button></div></div>
+    <div class="hint" style="margin-top:7px">JPG o PNG hasta 5 MB. La imagen marcada como principal se usa como miniatura en el sitio.</div>
+  </div></div>`:'';
+
+  return `${navbar()}${crumbs([['Sitio web'],['Portafolio']])}
  <div class="page"><div class="phead"><div><h1>Portafolio</h1><p>Obras que se muestran en el sitio público. Solo las publicadas son visibles para los visitantes.</p></div>
-  <button class="btn" onclick="say('ok','Proyecto guardado correctamente.')">Nuevo proyecto</button></div>
+  <button class="btn" onclick="nuevoProyecto()">Nuevo proyecto</button></div>
   ${ST.hu?'<div class="cota"><span class="t"></span><span class="b"></span><span class="r"></span><span class="hu">HU08</span></div>':''}
   ${ST.msg||''}
   <div class="card"><table><thead><tr><th>Nombre</th><th>Tipo de obra</th><th>Año</th><th>Estado</th><th></th></tr></thead><tbody>
-  ${PORT.map(p=>`<tr><td><b>${p.n}</b></td><td>${p.t}</td><td>${p.a}</td>
-   <td>${p.e==='Publicado'?'<span class="tg ok">Publicado</span>':'<span class="tg mt">Borrador</span>'}</td>
-   <td style="width:190px;white-space:nowrap"><button class="btn link">Editar</button> ·
-   <button class="btn link" onclick="say('ok','${p.e==='Publicado'?'Proyecto retirado del portafolio público.':'Proyecto publicado correctamente.'}')">${p.e==='Publicado'?'Despublicar':'Publicar'}</button></td></tr>`).join('')}
-  </tbody></table></div>
-  <div class="card" style="margin-top:20px"><div class="ch"><h4>Imágenes · Condominio Las Palmeras</h4></div>
-   <div class="cb"><div class="thumbs"><div class="th" style="border:2px solid var(--safety)">Principal</div>
-    <div class="th">Fachada</div><div class="th">Interior</div><button class="btn ghost sm">Subir imágenes</button></div>
-    <div class="hint" style="margin-top:7px">JPG o PNG hasta 5 MB. La imagen marcada se usa como miniatura en el sitio.</div>
-  </div></div></div>`;
+  ${filas}
+  </tbody></table></div>${form}${imagenes}</div>`;
+};
 
 V['servicios-adm']=()=>`${navbar()}${crumbs([['Sitio web'],['Servicios']])}
  <div class="page"><div class="phead"><div><h1>Servicios</h1><p>Catálogo que aparece en el sitio público. El orden define cómo se listan.</p></div>

@@ -3,7 +3,7 @@ ST.usuario = (sesionLeer() || {}).usuario || null;
 ST.perfil = ST.usuario ? (ST.usuario.rol === 'Cliente' ? 'cli' : 'adm') : 'pub';
 
 /* ================= control ================= */
-function go(v){ST.formUsuario=null;ST.formHito=null;ST.v=v;ST.msg=null;ST.menu=null;ST.nav=false;draw();window.scrollTo({top:0})}
+function go(v){ST.formUsuario=null;ST.formHito=null;ST.formProyecto=null;ST.v=v;ST.msg=null;ST.menu=null;ST.nav=false;draw();window.scrollTo({top:0})}
 function abrirObra(id){ST.obraId=id;ST.formHito=null;ST.hitoEditando=null;ST.tab='hitos';go('obra')}
 function tab(t){ST.tab=t;ST.msg=null;draw()}
 function tog(m,e){e.stopPropagation();ST.menu=ST.menu===m?null:m;draw()}
@@ -33,6 +33,23 @@ async function draw(){
   const vista = V[ST.v] || V.home;
   document.getElementById('app').innerHTML = await vista();
   location.hash = ST.v;
+  cargarImagenesProtegidas();
+}
+
+// Las imágenes del portafolio exigen sesión: no pueden ir directo en un <img src>, se piden con el token
+const imagenesCargadas = new Map();
+async function cargarImagenesProtegidas() {
+  for (const img of document.querySelectorAll('img[data-img-id]')) {
+    const id = img.dataset.imgId;
+    try {
+      if (!imagenesCargadas.has(id)) {
+        const r = await apiFetch(`${API}/api/portafolio/imagenes/${id}`);
+        if (!r.ok) continue;
+        imagenesCargadas.set(id, URL.createObjectURL(await r.blob()));
+      }
+      img.src = imagenesCargadas.get(id);
+    } catch (e) { /* la miniatura queda vacía */ }
+  }
 }
 
 // --- OBRAS ---
@@ -897,6 +914,120 @@ async function cambiarEstadoUsuario(id, activar) {
     const data = await respuesta.json();
     if (respuesta.ok) say('ok', data.mensaje);
     else if (respuesta.status !== 401) say('bad', data.mensaje || 'No se pudo cambiar el estado.');
+  } catch (e) {
+    say('bad', 'Error de conexión con el servidor.');
+  }
+}
+
+// --- PORTAFOLIO (HU-08) ---
+
+const IMAGEN_MAX_BYTES = 5 * 1024 * 1024;
+
+function nuevoProyecto() {
+  ST.formProyecto = { id: null, nombre: '', tipoObra: '', ubicacion: '', anio: new Date().getFullYear(), descripcion: '' };
+  ST.msg = null;
+  draw();
+  setTimeout(() => { const f = document.getElementById('form_proyecto'); if (f) f.scrollIntoView({ behavior: 'smooth' }); }, 50);
+}
+
+function editarProyecto(id) {
+  const p = (ST.portafolioCache || []).find(x => x.id === id);
+  if (!p) return;
+  ST.formProyecto = { id: p.id, nombre: p.nombre, tipoObra: p.tipoObra, ubicacion: p.ubicacion, anio: p.anio, descripcion: p.descripcion };
+  ST.msg = null;
+  draw();
+  setTimeout(() => { const f = document.getElementById('form_proyecto'); if (f) f.scrollIntoView({ behavior: 'smooth' }); }, 50);
+}
+
+function cancelarProyecto() {
+  ST.formProyecto = null;
+  ST.msg = null;
+  draw();
+}
+
+async function guardarProyecto() {
+  const f = ST.formProyecto;
+  // Se conserva lo escrito por si hay que volver a mostrar el formulario con un error
+  f.nombre = document.getElementById('port_nombre').value.trim();
+  f.tipoObra = document.getElementById('port_tipo').value;
+  f.ubicacion = document.getElementById('port_ubicacion').value.trim();
+  f.anio = document.getElementById('port_anio').value;
+  f.descripcion = document.getElementById('port_descripcion').value.trim();
+
+  if (!f.nombre) return say('bad', 'El nombre del proyecto es obligatorio.');
+  if (!f.tipoObra) return say('bad', 'Seleccione el tipo de obra.');
+  if (!f.anio) return say('bad', 'Ingrese el año de ejecución.');
+
+  try {
+    const respuesta = await apiFetch(f.id ? `${API}/api/portafolio/${f.id}` : `${API}/api/portafolio`, {
+      method: f.id ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre: f.nombre, tipoObra: f.tipoObra, ubicacion: f.ubicacion, anio: parseInt(f.anio), descripcion: f.descripcion })
+    });
+    const data = await respuesta.json();
+    if (respuesta.ok) {
+      // Tras guardar queda abierto el proyecto para poder subir sus imágenes
+      ST.formProyecto = { ...f, id: data.proyecto.id };
+      say('ok', data.mensaje + ' Ahora puede subir sus imágenes.');
+    } else if (respuesta.status !== 401) {
+      say('bad', data.mensaje || 'No se pudo guardar el proyecto.');
+    }
+  } catch (e) {
+    say('bad', 'Error de conexión con el servidor.');
+  }
+}
+
+async function cambiarPublicacion(id, publicar) {
+  try {
+    const respuesta = await apiFetch(`${API}/api/portafolio/${id}/${publicar ? 'publicar' : 'despublicar'}`, { method: 'PUT' });
+    const data = await respuesta.json();
+    if (respuesta.ok) say('ok', data.mensaje);
+    else if (respuesta.status !== 401) say('bad', data.mensaje || 'No se pudo cambiar el estado del proyecto.');
+  } catch (e) {
+    say('bad', 'Error de conexión con el servidor.');
+  }
+}
+
+async function subirImagenesProyecto(id) {
+  const entrada = document.getElementById('port_archivos');
+  const archivos = Array.from(entrada.files);
+  if (archivos.length === 0) return;
+
+  for (const a of archivos) {
+    if (!/\.(jpe?g|png)$/i.test(a.name)) return say('bad', `«${esc(a.name)}» no es válido. Solo se aceptan imágenes JPG o PNG.`);
+    if (a.size > IMAGEN_MAX_BYTES) return say('bad', `«${esc(a.name)}» supera el máximo de 5 MB.`);
+  }
+
+  const datos = new FormData();
+  archivos.forEach(a => datos.append('archivos', a));
+  try {
+    const respuesta = await apiFetch(`${API}/api/portafolio/${id}/imagenes`, { method: 'POST', body: datos });
+    const data = await respuesta.json();
+    if (respuesta.ok) say('ok', data.mensaje);
+    else if (respuesta.status !== 401) say('bad', data.mensaje || 'No se pudieron subir las imágenes.');
+  } catch (e) {
+    say('bad', 'Error de conexión con el servidor.');
+  }
+}
+
+async function marcarImagenPrincipal(imagenId) {
+  try {
+    const respuesta = await apiFetch(`${API}/api/portafolio/imagenes/${imagenId}/principal`, { method: 'PUT' });
+    const data = await respuesta.json();
+    if (respuesta.ok) say('ok', data.mensaje);
+    else if (respuesta.status !== 401) say('bad', data.mensaje || 'No se pudo marcar la imagen.');
+  } catch (e) {
+    say('bad', 'Error de conexión con el servidor.');
+  }
+}
+
+async function eliminarImagenProyecto(imagenId) {
+  if (!confirm('¿Eliminar esta imagen del proyecto?')) return;
+  try {
+    const respuesta = await apiFetch(`${API}/api/portafolio/imagenes/${imagenId}`, { method: 'DELETE' });
+    const data = await respuesta.json();
+    if (respuesta.ok) say('ok', data.mensaje);
+    else if (respuesta.status !== 401) say('bad', data.mensaje || 'No se pudo eliminar la imagen.');
   } catch (e) {
     say('bad', 'Error de conexión con el servidor.');
   }
