@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MymContratistas.Api.Data;
 using MymContratistas.Api.Models;
+using MymContratistas.Api.Services;
 
 namespace MymContratistas.Api.Controllers
 {
@@ -12,10 +14,29 @@ namespace MymContratistas.Api.Controllers
     public class ObrasController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
+        private readonly IPasswordHasher<Usuario> _hasher;
+        private readonly InvitacionService _invitacion;
 
-        public ObrasController(ApplicationDbContext context)
+        public ObrasController(ApplicationDbContext context, IPasswordHasher<Usuario> hasher, InvitacionService invitacion)
         {
             _context = context;
+            _hasher = hasher;
+            _invitacion = invitacion;
+        }
+
+        public class ObraDto
+        {
+            public string? Nombre { get; set; }
+            public int ClienteId { get; set; }
+            public string? Ubicacion { get; set; }
+            public string? Descripcion { get; set; }
+            public DateOnly? FechaInicio { get; set; }
+            public DateOnly? FechaFinEstimada { get; set; }
+        }
+
+        public class FinalizarDto
+        {
+            public DateOnly? FechaCierre { get; set; }
         }
 
         // GET: api/obras
@@ -34,13 +55,104 @@ namespace MymContratistas.Api.Controllers
         }
 
         // POST: api/obras
+        // Crea el expediente en estado «En Ejecución» y habilita el panel de seguimiento del cliente
         [HttpPost]
-        public async Task<ActionResult<Obra>> PostObra(Obra obra)
+        public async Task<IActionResult> PostObra([FromBody] ObraDto dto)
         {
+            var nombre = (dto.Nombre ?? string.Empty).Trim();
+            if (nombre.Length == 0) return BadRequest(new { mensaje = "El nombre del proyecto es obligatorio." });
+
+            var cliente = await _context.Clientes.FindAsync(dto.ClienteId);
+            if (cliente == null) return BadRequest(new { mensaje = "Seleccione un cliente registrado." });
+
+            if (dto.FechaInicio == null) return BadRequest(new { mensaje = "La fecha de inicio es obligatoria." });
+            if (dto.FechaFinEstimada != null && dto.FechaFinEstimada < dto.FechaInicio)
+                return BadRequest(new { mensaje = "La fecha estimada de fin no puede ser anterior a la de inicio." });
+
+            var obra = new Obra
+            {
+                Nombre = nombre,
+                Cliente = cliente.Nombre,
+                ClienteId = cliente.Id,
+                Ubicacion = (dto.Ubicacion ?? string.Empty).Trim(),
+                Descripcion = (dto.Descripcion ?? string.Empty).Trim(),
+                FechaInicio = dto.FechaInicio,
+                FechaFinEstimada = dto.FechaFinEstimada,
+                Estado = Obra.EnEjecucion,
+                AvancePorcentaje = 0
+            };
             _context.Obras.Add(obra);
+
+            var panel = await PrepararPanelClienteAsync(cliente);
             await _context.SaveChangesAsync();
 
-            return CreatedAtAction(nameof(GetObras), new { id = obra.Id }, obra);
+            var correoEnviado = panel.Invitar != null && await _invitacion.EnviarAsync(panel.Invitar.Value.usuario, panel.Invitar.Value.token);
+
+            var mensaje = "Proyecto registrado en estado En Ejecución. " + panel.Aviso;
+            if (panel.Invitar != null)
+                mensaje += correoEnviado
+                    ? " Se envió el enlace para que defina su contraseña."
+                    : " No se pudo enviar el correo: use «Recuperar contraseña» para que defina su clave.";
+
+            return StatusCode(201, new { mensaje, panelHabilitado = panel.Habilitado, correoEnviado, obra });
+        }
+
+        // PUT: api/obras/{id}/finalizar
+        [HttpPut("{id}/finalizar")]
+        public async Task<IActionResult> Finalizar(int id, [FromBody] FinalizarDto? dto)
+        {
+            var obra = await _context.Obras.FindAsync(id);
+            if (obra == null) return NotFound(new { mensaje = "La obra no existe." });
+            if (obra.Estado == Obra.Finalizado) return Conflict(new { mensaje = "La obra ya está finalizada." });
+
+            var hoy = DateOnly.FromDateTime(DateTime.Now);
+            var cierre = dto?.FechaCierre ?? hoy;
+            if (cierre > hoy) return BadRequest(new { mensaje = "La fecha de cierre no puede ser futura." });
+            if (obra.FechaInicio != null && cierre < obra.FechaInicio)
+                return BadRequest(new { mensaje = "La fecha de cierre no puede ser anterior a la fecha de inicio de la obra." });
+
+            obra.Estado = Obra.Finalizado;
+            obra.FechaCierre = cierre;
+            await _context.SaveChangesAsync();
+
+            return Ok(new { mensaje = $"Obra finalizada con fecha de cierre {cierre:dd/MM/yyyy}.", obra });
+        }
+
+        // Garantiza que el cliente tenga una cuenta con rol Cliente vinculada a su ficha.
+        // La invitación se envía después de guardar, para no avisar de algo que luego falle.
+        private async Task<(bool Habilitado, string Aviso, (Usuario usuario, string token)? Invitar)> PrepararPanelClienteAsync(Cliente cliente)
+        {
+            var vinculado = await _context.Usuarios.Include(u => u.Rol).FirstOrDefaultAsync(u => u.ClienteId == cliente.Id);
+            if (vinculado != null)
+            {
+                return vinculado.Estado == "Activo"
+                    ? (true, "El cliente ya tiene acceso a su panel de seguimiento.", null)
+                    : (false, "La cuenta del cliente está inactiva: actívela en Usuarios para que vea su panel.", null);
+            }
+
+            var correo = (cliente.Correo ?? string.Empty).Trim().ToLowerInvariant();
+            if (correo.Length == 0)
+                return (false, "El cliente no tiene correo registrado, por lo que su panel de seguimiento aún no está habilitado.", null);
+
+            var existente = await _context.Usuarios.Include(u => u.Rol).FirstOrDefaultAsync(u => u.Correo.ToLower() == correo);
+            if (existente != null)
+            {
+                if (existente.Rol.Nombre != NombresRol.Cliente)
+                    return (false, "El correo del cliente pertenece a un usuario del personal; su panel no se habilitó.", null);
+                existente.ClienteId = cliente.Id;
+                return existente.Estado == "Activo"
+                    ? (true, "El cliente ya tiene acceso a su panel de seguimiento.", null)
+                    : (false, "La cuenta del cliente está inactiva: actívela en Usuarios para que vea su panel.", null);
+            }
+
+            var rol = await _context.Roles.FirstAsync(r => r.Nombre == NombresRol.Cliente);
+            var usuario = new Usuario { Nombres = cliente.Nombre, Correo = correo, RolId = rol.Id, Rol = rol, ClienteId = cliente.Id };
+            // Contraseña aleatoria inutilizable: el cliente define la suya con el enlace del correo
+            usuario.PasswordHash = _hasher.HashPassword(usuario, Convert.ToBase64String(Guid.NewGuid().ToByteArray()) + Guid.NewGuid());
+            var token = EnlaceTokens.Generar(usuario, TimeSpan.FromHours(InvitacionService.HorasVigencia));
+            _context.Usuarios.Add(usuario);
+
+            return (true, "El cliente ya tiene acceso a su panel de seguimiento.", (usuario, token));
         }
 
         public class HitoDto

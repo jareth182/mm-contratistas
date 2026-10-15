@@ -14,6 +14,9 @@ namespace MymContratistas.Api.Models
         public int RolId { get; set; }
         public Rol Rol { get; set; } = null!;
 
+        // Solo para el rol Cliente: ficha de cliente cuyas obras puede seguir
+        public int? ClienteId { get; set; }
+
         // Control de acceso: bloqueo por intentos fallidos
         public int IntentosFallidos { get; set; } = 0;
         public DateTime? BloqueoHasta { get; set; }

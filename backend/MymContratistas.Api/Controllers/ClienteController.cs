@@ -20,13 +20,18 @@ namespace MymContratistas.Api.Controllers
         }
 
         // GET: api/cliente/obras
-        // La obra se vincula al usuario por el nombre del cliente registrado en la obra
+        // La obra se vincula por la ficha de cliente de la cuenta (HU11); las obras anteriores,
+        // sin ficha, se siguen reconociendo por el nombre del cliente registrado en la obra
         [HttpGet("obras")]
         public async Task<IActionResult> MisObras()
         {
             var nombre = (User.FindFirstValue(ClaimTypes.Name) ?? string.Empty).Trim().ToLower();
+            int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var usuarioId);
+            var clienteId = await _context.Usuarios.Where(u => u.Id == usuarioId).Select(u => u.ClienteId).FirstOrDefaultAsync();
+
             var obras = await _context.Obras
-                .Where(o => o.Cliente.Trim().ToLower() == nombre)
+                .Where(o => (clienteId != null && o.ClienteId == clienteId)
+                         || (o.ClienteId == null && o.Cliente.Trim().ToLower() == nombre))
                 .Select(o => new
                 {
                     o.Id,
