@@ -596,6 +596,44 @@ function exportarControlEconomico() {
   document.body.removeChild(a);
   window.URL.revokeObjectURL(url);
 }
+// --- AUTENTICACIÓN (HU-01) ---
+
+async function iniciarSesion() {
+  const correo = document.getElementById('login_correo').value;
+  const password = document.getElementById('login_password').value;
+
+  if (!correo || !password) {
+    say('bad', 'Debe ingresar su correo y contraseña.');
+    return;
+  }
+
+  try {
+    const respuesta = await fetch('http://localhost:5067/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ correo: correo, password: password })
+    });
+
+    const data = await respuesta.json();
+
+    if (respuesta.ok) {
+      // 1. Guardamos al usuario de forma global en Javascript (para la HU-02)
+      ST.usuario = data;
+      
+      // 2. Redirección según rol (Criterio de Aceptación 2)
+      if (data.rol === 'Cliente') {
+        perfil('cli', 'c-obra');
+      } else {
+        perfil('adm', 'tablero');
+      }
+    } else {
+      // Si la contraseña está mal o la cuenta se bloqueó, el backend manda un "mensaje" (Criterio 4)
+      say('bad', data.mensaje);
+    }
+  } catch (error) {
+    say('bad', 'Error al conectar con el servidor.');
+  }
+}
 
 // --- ARRANQUE ---
 

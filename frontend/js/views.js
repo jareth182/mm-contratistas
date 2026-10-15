@@ -79,17 +79,16 @@ V.login=()=>`${navbar()}
   <p>Acceso para el personal de M/M Contratistas y para clientes con obra en curso.</p></div>${ST.hu?'<span class="hu">HU01</span>':''}</div>
   ${ST.msg||''}
   <div class="card"><div class="cb">
-   <div class="f"><label>Correo electrónico</label><input value="marco.zapata@m/mcontratistas.pe"></div>
-   <div class="f"><label>Contraseña</label><input type="password" value="············"></div>
-   <button class="btn" style="width:100%" onclick="perfil('adm','tablero')">Ingresar</button>
-   <div style="display:flex;justify-content:space-between;margin-top:12px">
+   <!-- Agregamos los ID para capturar los datos -->
+   <div class="f"><label>Correo electrónico</label><input id="login_correo" value="marco.zapata@mym.pe"></div>
+   <div class="f"><label>Contraseña</label><input type="password" id="login_password" value="123"></div>
+   
+   <button class="btn" style="width:100%" onclick="iniciarSesion()">Ingresar</button>
+   
+   <div style="display:flex;justify-content:center;margin-top:12px">
      <button class="btn link" onclick="go('recuperar')">¿Olvidó su contraseña?</button>
-     <button class="btn link" onclick="perfil('cli','c-obra')">Entrar como cliente</button></div>
-   <div style="border-top:1px solid var(--line-2);margin-top:16px;padding-top:12px">
-     <div class="hint" style="margin-bottom:7px">Escenarios de la historia:</div>
-     <button class="btn ghost sm" onclick="say('bad','Usuario o contraseña incorrectos.')">Credenciales incorrectas</button>
-     <button class="btn ghost sm" onclick="say('bad','Cuenta bloqueada temporalmente por seguridad. Intente nuevamente en 15 minutos.')">Bloqueo por 5 intentos</button>
-   </div></div></div></div>${pie()}`;
+   </div>
+  </div></div></div>${pie()}`;
 
 V.recuperar=()=>`${navbar()}
  <div class="page" style="max-width:430px;padding-top:50px"><div class="phead"><div><h1>Recuperar contraseña</h1>

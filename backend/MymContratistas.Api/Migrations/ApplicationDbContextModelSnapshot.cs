@@ -60,7 +60,7 @@ namespace MymContratistas.Api.Migrations
 
                     b.HasIndex("ObraId");
 
-                    b.ToTable("Colaboradores");
+                    b.ToTable("Cuadrilla");
                 });
 
             modelBuilder.Entity("MymContratistas.Api.Models.Documento", b =>
@@ -283,6 +283,67 @@ namespace MymContratistas.Api.Migrations
                     b.HasIndex("ObraId");
 
                     b.ToTable("Partidas");
+                });
+
+            modelBuilder.Entity("MymContratistas.Api.Models.Usuario", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("BloqueoHasta")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Correo")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("IntentosFallidos")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("NombreCompleto")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Password")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Rol")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Usuarios");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            Correo = "marco.zapata@mym.pe",
+                            Estado = "Activo",
+                            IntentosFallidos = 0,
+                            NombreCompleto = "Marco Zapata",
+                            Password = "123",
+                            Rol = "Gerente de Operaciones"
+                        },
+                        new
+                        {
+                            Id = 2,
+                            Correo = "contacto@delrio.pe",
+                            Estado = "Activo",
+                            IntentosFallidos = 0,
+                            NombreCompleto = "Inversiones Del Río",
+                            Password = "123",
+                            Rol = "Cliente"
+                        });
                 });
 
             modelBuilder.Entity("MymContratistas.Api.Models.Colaborador", b =>

@@ -136,7 +136,7 @@ namespace MymContratistas.Api.Controllers
                 colaborador.FechaIngresoObra = DateTime.Now.ToString("dd/MM/yyyy");
             }
 
-            _context.Colaboradores.Add(colaborador);
+            _context.Cuadrilla.Add(colaborador);
             await _context.SaveChangesAsync();
 
             return Ok(colaborador);
@@ -146,10 +146,10 @@ namespace MymContratistas.Api.Controllers
         [HttpDelete("cuadrilla/{id}")]
         public async Task<IActionResult> RetirarColaborador(int id)
         {
-            var colaborador = await _context.Colaboradores.FindAsync(id);
+            var colaborador = await _context.Cuadrilla.FindAsync(id);
             if (colaborador == null) return NotFound("El colaborador no existe.");
 
-            _context.Colaboradores.Remove(colaborador);
+            _context.Cuadrilla.Remove(colaborador);
             await _context.SaveChangesAsync();
 
             return Ok();
