@@ -22,6 +22,35 @@ namespace MymContratistas.Api.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("MymContratistas.Api.Models.AdjuntoCotizacion", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Archivo")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("NombreOriginal")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("SolicitudCotizacionId")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("Tamano")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SolicitudCotizacionId");
+
+                    b.ToTable("AdjuntosCotizacion");
+                });
+
             modelBuilder.Entity("MymContratistas.Api.Models.Cliente", b =>
                 {
                     b.Property<int>("Id")
@@ -492,6 +521,61 @@ namespace MymContratistas.Api.Migrations
                     b.ToTable("Servicios");
                 });
 
+            modelBuilder.Entity("MymContratistas.Api.Models.SolicitudCotizacion", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Codigo")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Correo")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<bool>("CorreoNotificado")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Descripcion")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Distrito")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("FechaRegistro")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Nombres")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int?>("ServicioId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ServicioNombre")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Telefono")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Codigo")
+                        .IsUnique();
+
+                    b.HasIndex("ServicioId");
+
+                    b.ToTable("SolicitudesCotizacion");
+                });
+
             modelBuilder.Entity("MymContratistas.Api.Models.Usuario", b =>
                 {
                     b.Property<int>("Id")
@@ -548,6 +632,17 @@ namespace MymContratistas.Api.Migrations
                     b.HasIndex("RolId");
 
                     b.ToTable("Usuarios");
+                });
+
+            modelBuilder.Entity("MymContratistas.Api.Models.AdjuntoCotizacion", b =>
+                {
+                    b.HasOne("MymContratistas.Api.Models.SolicitudCotizacion", "Solicitud")
+                        .WithMany("Adjuntos")
+                        .HasForeignKey("SolicitudCotizacionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Solicitud");
                 });
 
             modelBuilder.Entity("MymContratistas.Api.Models.Colaborador", b =>
@@ -645,6 +740,16 @@ namespace MymContratistas.Api.Migrations
                     b.Navigation("Servicio");
                 });
 
+            modelBuilder.Entity("MymContratistas.Api.Models.SolicitudCotizacion", b =>
+                {
+                    b.HasOne("MymContratistas.Api.Models.Servicio", "Servicio")
+                        .WithMany()
+                        .HasForeignKey("ServicioId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Servicio");
+                });
+
             modelBuilder.Entity("MymContratistas.Api.Models.Usuario", b =>
                 {
                     b.HasOne("MymContratistas.Api.Models.Cliente", null)
@@ -679,6 +784,11 @@ namespace MymContratistas.Api.Migrations
             modelBuilder.Entity("MymContratistas.Api.Models.ProyectoPortafolio", b =>
                 {
                     b.Navigation("Imagenes");
+                });
+
+            modelBuilder.Entity("MymContratistas.Api.Models.SolicitudCotizacion", b =>
+                {
+                    b.Navigation("Adjuntos");
                 });
 #pragma warning restore 612, 618
         }
