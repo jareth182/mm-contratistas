@@ -66,7 +66,7 @@ V.servicios=()=>`${navbar()}${crumbs([['Inicio','home'],['Servicios']])}
  <div class="page"><div class="phead"><div><h1>Servicios</h1>
    <p>Trabajamos con constructoras, inversionistas y propietarios directos. Toda obra incluye personal asegurado y equipo de protección.</p></div></div>
    ${ST.hu?'<div class="cota"><span class="t"></span><span class="b"></span><span class="r"></span><span class="hu">HU06</span></div>':''}
-   ${SERV.map(s=>`<div class="srv"><h3>${s.n}</h3><div><p style="margin:0 0 10px">${s.d}</p>
+   ${(ST.servicios||[]).map(s=>`<div class="srv"><h3>${esc(s.nombre)}</h3><div><p style="margin:0 0 10px">${esc(s.descripcion)}</p>
      <button class="btn ghost sm" onclick="go('cotizar')">Cotizar este servicio</button></div></div>`).join('')}
  </div>${pie()}`;
 
@@ -95,7 +95,7 @@ V.cotizar=()=>`${navbar()}${crumbs([['Inicio','home'],['Solicitar cotización']]
    <div class="g2"><div class="f"><label>Nombres y apellidos</label><input placeholder="Ana Torres Miranda"></div>
      <div class="f"><label>Teléfono</label><input placeholder="987 654 321"></div></div>
    <div class="f"><label>Correo electrónico</label><input placeholder="ana.torres@correo.com"></div>
-   <div class="g2"><div class="f"><label>Tipo de servicio</label><select>${SERV.map(s=>`<option>${s.n}</option>`).join('')}</select></div>
+   <div class="g2"><div class="f"><label>Tipo de servicio</label><select>${(ST.servicios||[]).map(s=>`<option>${esc(s.nombre)}</option>`).join('')}</select></div>
      <div class="f"><label>Distrito</label><input placeholder="San Isidro"></div></div>
    <div class="f"><label>Descripción del trabajo</label><textarea placeholder="Ampliación de un tercer piso sobre losa existente, aproximadamente 90 m²."></textarea></div>
    <div class="f"><label>Planos o fotos de referencia</label><div class="thumbs">
@@ -286,15 +286,44 @@ V.portafolio=async()=>{
   </tbody></table></div>${form}${imagenes}</div>`;
 };
 
-V['servicios-adm']=()=>`${navbar()}${crumbs([['Sitio web'],['Servicios']])}
+V['servicios-adm']=async()=>{
+  let filas='',servicios=[];
+  try{
+    const r=await apiFetch(`${API}/api/servicios`);
+    if(!r.ok) throw new Error();
+    servicios=await r.json();
+    ST.serviciosAdmCache=servicios;
+    filas=servicios.map(s=>`<tr><td class="num">${s.orden}</td><td><b>${esc(s.nombre)}</b><div class="hint">${esc(s.descripcion)}</div></td>
+     <td>${s.estado==='Publicado'?'<span class="tg ok">Publicado</span>':'<span class="tg mt">Oculto</span>'}</td>
+     <td style="width:150px;white-space:nowrap"><button class="btn link" onclick="editarServicio(${s.id})">Editar</button> ·
+      <button class="btn link" style="color:var(--rust)" onclick="confirmarEliminarServicio(${s.id})">Eliminar</button></td></tr>`).join('')
+      ||'<tr><td colspan="4" style="text-align:center;color:var(--concrete)">Aún no hay servicios en el catálogo.</td></tr>';
+  }catch(e){
+    filas='<tr><td colspan="4" style="text-align:center;color:var(--rust)">Error al cargar los servicios desde el servidor.</td></tr>';
+  }
+
+  const f=ST.formServicio;
+  const form=f?`<div class="card" style="margin-top:20px" id="form_servicio"><div class="ch"><h4>${f.id?'Editar servicio':'Nuevo servicio'}</h4></div><div class="cb">
+    <div class="g2"><div class="f"><label>Nombre del servicio</label><input id="srv_nombre" value="${esc(f.nombre)}" placeholder="Construcción de edificios"></div>
+     <div class="g2" style="gap:0 12px"><div class="f"><label>Orden</label><input id="srv_orden" type="number" min="1" value="${esc(f.orden)}"></div>
+      <div class="f"><label>Estado</label><select id="srv_estado"><option ${f.estado==='Publicado'?'selected':''}>Publicado</option><option ${f.estado==='Oculto'?'selected':''}>Oculto</option></select></div></div></div>
+    <div class="f"><label>Descripción breve</label><textarea id="srv_descripcion" placeholder="Se muestra en el listado del catálogo.">${esc(f.descripcion)}</textarea></div>
+    <div class="g2"><div class="f"><label>Beneficios</label><textarea id="srv_beneficios" placeholder="Uno por línea">${esc(f.beneficios)}</textarea></div>
+     <div class="f"><label>Características</label><textarea id="srv_caracteristicas" placeholder="Una por línea">${esc(f.caracteristicas)}</textarea></div></div>
+    <div class="hint" style="margin-bottom:10px">El orden define la posición en el sitio; los demás servicios se reacomodan solos.</div>
+    <button class="btn" onclick="guardarServicio()">${f.id?'Guardar cambios':'Registrar servicio'}</button>
+    <button class="btn ghost" style="margin-left:8px" onclick="cancelarServicio()">Cancelar</button>
+   </div></div>`:'';
+
+  return `${navbar()}${crumbs([['Sitio web'],['Servicios']])}
  <div class="page"><div class="phead"><div><h1>Servicios</h1><p>Catálogo que aparece en el sitio público. El orden define cómo se listan.</p></div>
-  <button class="btn" onclick="say('ok','Servicio registrado correctamente.')">Nuevo servicio</button></div>
+  <button class="btn" onclick="nuevoServicio()">Nuevo servicio</button></div>
   ${ST.hu?'<div class="cota"><span class="t"></span><span class="b"></span><span class="r"></span><span class="hu">HU09</span></div>':''}
   ${ST.msg||''}
-  <div class="card"><table><thead><tr><th class="num" style="width:70px">Orden</th><th>Servicio</th><th>Descripción</th><th></th></tr></thead><tbody>
-  ${SERV.map((s,i)=>`<tr><td class="num">${i+1}</td><td><b>${s.n}</b></td><td class="hint">${s.d}</td>
-   <td style="width:150px;white-space:nowrap"><button class="btn link">Editar</button> · <button class="btn link">Eliminar</button></td></tr>`).join('')}
-  </tbody></table></div></div>`;
+  <div class="card"><table><thead><tr><th class="num" style="width:70px">Orden</th><th>Servicio</th><th>Estado</th><th></th></tr></thead><tbody>
+  ${filas}
+  </tbody></table></div>${form}</div>`;
+};
 
 V.personal=()=>`${navbar()}${crumbs([['Personal']])}
  <div class="page"><div class="phead"><div><h1>Personal</h1><p>Colaboradores de obra con su especialidad, jornal y estado de la documentación obligatoria.</p></div>

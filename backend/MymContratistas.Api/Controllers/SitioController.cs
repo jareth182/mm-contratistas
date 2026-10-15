@@ -61,6 +61,17 @@ namespace MymContratistas.Api.Controllers
             });
         }
 
+        // GET: api/sitio/servicios  — catálogo publicado, en el orden definido (HU09)
+        [HttpGet("servicios")]
+        public async Task<IActionResult> Servicios()
+        {
+            var servicios = await _context.Servicios.Where(s => s.Estado == Servicio.Publicado)
+                .OrderBy(s => s.Orden).ThenBy(s => s.Id)
+                .Select(s => new { id = s.Id, nombre = s.Nombre, descripcion = s.Descripcion })
+                .ToListAsync();
+            return Ok(servicios);
+        }
+
         // GET: api/sitio/imagenes/{id}  — solo imágenes de proyectos publicados
         [HttpGet("imagenes/{id}")]
         public async Task<IActionResult> Imagen(int id)
