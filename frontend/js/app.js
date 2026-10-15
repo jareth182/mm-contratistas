@@ -1215,6 +1215,8 @@ function verServicioPublico(id) {
 // Abre la cotización con el servicio ya elegido (null = sin preselección)
 function cotizarServicio(id) {
   ST.servicioCotizar = id;
+  ST.formCotizacion = null;
+  ST.adjuntosCotizacion = [];
   go('cotizar');
 }
 
@@ -1376,6 +1378,80 @@ async function eliminarServicio(id) {
     }
   } catch (e) {
     say('bad', 'Error de conexión con el servidor.');
+  }
+}
+
+// --- SOLICITUD DE COTIZACIÓN (HU-07) ---
+
+const COTIZACION_MAX_BYTES = 10 * 1024 * 1024;
+const COTIZACION_MAX_ADJUNTOS = 5;
+
+// Guarda lo escrito para no perderlo al volver a dibujar (mensajes, adjuntos)
+function leerFormularioCotizacion() {
+  const valor = id => { const e = document.getElementById(id); return e ? e.value : ''; };
+  ST.formCotizacion = {
+    nombres: valor('cot_nombres').trim(),
+    telefono: valor('cot_telefono').trim(),
+    correo: valor('cot_correo').trim(),
+    servicioId: valor('cot_servicio'),
+    distrito: valor('cot_distrito').trim(),
+    descripcion: valor('cot_descripcion').trim()
+  };
+  return ST.formCotizacion;
+}
+
+function agregarAdjuntosCotizacion() {
+  leerFormularioCotizacion();
+  const entrada = document.getElementById('cot_archivos');
+  const lista = ST.adjuntosCotizacion = ST.adjuntosCotizacion || [];
+  for (const a of Array.from(entrada.files)) {
+    if (!/\.(pdf|jpe?g|png)$/i.test(a.name)) return say('bad', `«${esc(a.name)}» no es válido. Solo se aceptan PDF, JPG o PNG.`);
+    if (a.size > COTIZACION_MAX_BYTES) return say('bad', `«${esc(a.name)}» supera el máximo de 10 MB.`);
+    if (lista.length >= COTIZACION_MAX_ADJUNTOS) return say('bad', `Puede adjuntar como máximo ${COTIZACION_MAX_ADJUNTOS} archivos.`);
+    lista.push(a);
+  }
+  ST.msg = null;
+  draw();
+}
+
+function quitarAdjuntoCotizacion(indice) {
+  leerFormularioCotizacion();
+  ST.adjuntosCotizacion.splice(indice, 1);
+  draw();
+}
+
+async function enviarCotizacion() {
+  const f = leerFormularioCotizacion();
+  const faltantes = [];
+  if (!f.nombres) faltantes.push('nombres y apellidos');
+  if (!f.telefono) faltantes.push('teléfono');
+  if (!f.correo) faltantes.push('correo electrónico');
+  if (!f.servicioId) faltantes.push('tipo de servicio');
+  if (!f.distrito) faltantes.push('distrito');
+  if (!f.descripcion) faltantes.push('descripción del trabajo');
+  if (faltantes.length) return say('bad', `Complete los campos obligatorios: ${faltantes.join(', ')}.`);
+  if (!/^\+?[\d\s-]{7,15}$/.test(f.telefono)) return say('bad', 'Ingrese un teléfono válido.');
+  if (!/^\S+@\S+\.\S+$/.test(f.correo)) return say('bad', 'Ingrese un correo electrónico válido.');
+
+  const datos = new FormData();
+  Object.entries(f).forEach(([campo, valor]) => datos.append(campo, valor));
+  (ST.adjuntosCotizacion || []).forEach(a => datos.append('archivos', a));
+
+  const boton = document.getElementById('cot_enviar');
+  if (boton) { boton.disabled = true; boton.textContent = 'Enviando…'; }
+  try {
+    const respuesta = await fetch(`${API}/api/cotizaciones`, { method: 'POST', body: datos });
+    const data = await respuesta.json().catch(() => ({}));
+    if (respuesta.ok) {
+      ST.formCotizacion = null;
+      ST.adjuntosCotizacion = [];
+      ST.servicioCotizar = null;
+      say('ok', esc(data.mensaje));
+    } else {
+      say('bad', esc(data.mensaje || 'No se pudo enviar la solicitud. Revise los datos e intente nuevamente.'));
+    }
+  } catch (e) {
+    say('bad', 'Error de conexión con el servidor. Intente nuevamente en unos minutos.');
   }
 }
 

@@ -23,7 +23,7 @@ namespace MymContratistas.Api.Tests
             public List<(string Para, string Asunto)> Enviados { get; } = new();
             public bool Falla { get; set; }
 
-            public Task EnviarAsync(string destinatario, string asunto, string cuerpoHtml)
+            public Task EnviarAsync(string destinatario, string asunto, string cuerpoHtml, IReadOnlyList<AdjuntoCorreo>? adjuntos = null)
             {
                 if (Falla) throw new InvalidOperationException("SMTP caído");
                 Enviados.Add((destinatario, asunto));

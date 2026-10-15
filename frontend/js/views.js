@@ -117,24 +117,34 @@ V.nosotros=()=>`${navbar()}${crumbs([['Inicio','home'],['Nosotros']])}
    <div><div class="v">2018</div><div class="l">Año de fundación</div></div>
   </div></div>${pie()}`;
 
-V.cotizar=()=>`${navbar()}${crumbs([['Inicio','home'],['Solicitar cotización']])}
+V.cotizar=()=>{
+  const f=ST.formCotizacion||{nombres:'',telefono:'',correo:'',distrito:'',descripcion:''};
+  const servicioElegido=f.servicioId??ST.servicioCotizar;
+  const adjuntos=ST.adjuntosCotizacion||[];
+  const kb=n=>n<1024*1024?`${Math.max(1,Math.round(n/1024))} KB`:`${(n/1024/1024).toFixed(1)} MB`;
+  return `${navbar()}${crumbs([['Inicio','home'],['Solicitar cotización']])}
  <div class="page" style="max-width:720px"><div class="phead"><div><h1>Solicitar cotización</h1>
    <p>Describa el trabajo que necesita. Le respondemos con una propuesta en un plazo de tres días hábiles.</p></div>
    ${ST.hu?'<span class="hu">HU07</span>':''}</div>
   ${ST.msg||''}
   <div class="card"><div class="cb">
-   <div class="g2"><div class="f"><label>Nombres y apellidos</label><input placeholder="Ana Torres Miranda"></div>
-     <div class="f"><label>Teléfono</label><input placeholder="987 654 321"></div></div>
-   <div class="f"><label>Correo electrónico</label><input placeholder="ana.torres@correo.com"></div>
-   <div class="g2"><div class="f"><label>Tipo de servicio</label><select id="cot_servicio">${(ST.servicios||[]).map(s=>`<option value="${s.id}" ${s.id===ST.servicioCotizar?'selected':''}>${esc(s.nombre)}</option>`).join('')}</select></div>
-     <div class="f"><label>Distrito</label><input placeholder="San Isidro"></div></div>
-   <div class="f"><label>Descripción del trabajo</label><textarea placeholder="Ampliación de un tercer piso sobre losa existente, aproximadamente 90 m²."></textarea></div>
-   <div class="f"><label>Planos o fotos de referencia</label><div class="thumbs">
-     <span class="th doc">plano-nivel-3.pdf</span><span class="th doc">fachada.jpg</span>
-     <button class="btn ghost sm">Adjuntar archivos</button></div>
-     <div class="hint" style="margin-top:5px">PDF, JPG o PNG. Hasta 10 MB por archivo.</div></div>
-   <button class="btn" onclick="say('ok','Su solicitud fue enviada correctamente. Código SC-2026-0184. Nos comunicaremos con usted a la brevedad.')">Enviar solicitud</button>
+   <div class="g2"><div class="f"><label for="cot_nombres">Nombres y apellidos *</label><input id="cot_nombres" value="${esc(f.nombres)}" autocomplete="name" placeholder="Ana Torres Miranda"></div>
+     <div class="f"><label for="cot_telefono">Teléfono *</label><input id="cot_telefono" value="${esc(f.telefono)}" type="tel" autocomplete="tel" placeholder="987 654 321"></div></div>
+   <div class="f"><label for="cot_correo">Correo electrónico *</label><input id="cot_correo" value="${esc(f.correo)}" type="email" autocomplete="email" placeholder="ana.torres@correo.com"></div>
+   <div class="g2"><div class="f"><label for="cot_servicio">Tipo de servicio *</label><select id="cot_servicio"><option value="">Seleccione un servicio</option>
+      ${(ST.servicios||[]).map(s=>`<option value="${s.id}" ${String(s.id)===String(servicioElegido)?'selected':''}>${esc(s.nombre)}</option>`).join('')}</select></div>
+     <div class="f"><label for="cot_distrito">Distrito *</label><input id="cot_distrito" value="${esc(f.distrito)}" placeholder="San Isidro"></div></div>
+   <div class="f"><label for="cot_descripcion">Descripción del trabajo *</label><textarea id="cot_descripcion" placeholder="Ampliación de un tercer piso sobre losa existente, aproximadamente 90 m².">${esc(f.descripcion)}</textarea></div>
+   <div class="f"><label>Planos o fotos de referencia</label>
+     ${adjuntos.length?`<ul class="adjuntos">${adjuntos.map((a,i)=>`<li><span>${esc(a.name)} <span class="hint">· ${kb(a.size)}</span></span>
+       <button class="btn link" onclick="quitarAdjuntoCotizacion(${i})" aria-label="Quitar ${esc(a.name)}">Quitar</button></li>`).join('')}</ul>`:''}
+     <input type="file" id="cot_archivos" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" multiple style="display:none" onchange="agregarAdjuntosCotizacion()">
+     ${adjuntos.length<COTIZACION_MAX_ADJUNTOS?'<button class="btn ghost sm" onclick="document.getElementById(\'cot_archivos\').click()">Adjuntar archivos</button>':''}
+     <div class="hint" style="margin-top:5px">PDF, JPG o PNG. Hasta 10 MB por archivo y ${COTIZACION_MAX_ADJUNTOS} archivos como máximo.</div></div>
+   <button class="btn" id="cot_enviar" onclick="enviarCotizacion()">Enviar solicitud</button>
+   <div class="hint" style="margin-top:8px">* Campos obligatorios</div>
   </div></div></div>${pie()}`;
+};
 
 V.login=()=>`${navbar()}
  <div class="page" style="max-width:430px;padding-top:50px"><div class="phead"><div><h1>Ingresar</h1>

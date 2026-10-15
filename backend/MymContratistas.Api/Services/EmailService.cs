@@ -3,9 +3,11 @@ using System.Net.Mail;
 
 namespace MymContratistas.Api.Services
 {
+    public record AdjuntoCorreo(string Nombre, byte[] Contenido);
+
     public interface IEmailService
     {
-        Task EnviarAsync(string destinatario, string asunto, string cuerpoHtml);
+        Task EnviarAsync(string destinatario, string asunto, string cuerpoHtml, IReadOnlyList<AdjuntoCorreo>? adjuntos = null);
     }
 
     // Envía por SMTP con los datos de .env (Smtp__*). Sin configuración, escribe el correo en el log (útil en desarrollo).
@@ -20,14 +22,15 @@ namespace MymContratistas.Api.Services
             _logger = logger;
         }
 
-        public async Task EnviarAsync(string destinatario, string asunto, string cuerpoHtml)
+        public async Task EnviarAsync(string destinatario, string asunto, string cuerpoHtml, IReadOnlyList<AdjuntoCorreo>? adjuntos = null)
         {
             var usuario = _config["Smtp:User"];
             var clave = _config["Smtp:Password"];
 
             if (string.IsNullOrWhiteSpace(usuario) || string.IsNullOrWhiteSpace(clave))
             {
-                _logger.LogWarning("SMTP no configurado. Correo para {Destinatario} | {Asunto}\n{Cuerpo}", destinatario, asunto, cuerpoHtml);
+                _logger.LogWarning("SMTP no configurado. Correo para {Destinatario} | {Asunto} | {Adjuntos} adjunto(s)\n{Cuerpo}",
+                    destinatario, asunto, adjuntos?.Count ?? 0, cuerpoHtml);
                 return;
             }
 
@@ -39,6 +42,8 @@ namespace MymContratistas.Api.Services
                 IsBodyHtml = true
             };
             mensaje.To.Add(destinatario);
+            foreach (var adjunto in adjuntos ?? Array.Empty<AdjuntoCorreo>())
+                mensaje.Attachments.Add(new Attachment(new MemoryStream(adjunto.Contenido), adjunto.Nombre));
 
             using var smtp = new SmtpClient(_config["Smtp:Host"] ?? "smtp.gmail.com", int.Parse(_config["Smtp:Port"] ?? "587"))
             {

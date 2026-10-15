@@ -20,6 +20,8 @@ namespace MymContratistas.Api.Data // <-- Aquí estaba el detalle
         public DbSet<ImagenProyecto> ImagenesPortafolio { get; set; }
         public DbSet<Cliente> Clientes { get; set; }
         public DbSet<Servicio> Servicios { get; set; }
+        public DbSet<SolicitudCotizacion> SolicitudesCotizacion { get; set; }
+        public DbSet<AdjuntoCotizacion> AdjuntosCotizacion { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -33,6 +35,11 @@ namespace MymContratistas.Api.Data // <-- Aquí estaba el detalle
             modelBuilder.Entity<ProyectoPortafolio>()
                 .HasOne(p => p.Servicio).WithMany().HasForeignKey(p => p.ServicioId).OnDelete(DeleteBehavior.SetNull);
             modelBuilder.Entity<Cliente>().HasIndex(c => c.Documento).IsUnique();
+            modelBuilder.Entity<SolicitudCotizacion>().HasIndex(c => c.Codigo).IsUnique();
+            modelBuilder.Entity<SolicitudCotizacion>()
+                .HasOne(c => c.Servicio).WithMany().HasForeignKey(c => c.ServicioId).OnDelete(DeleteBehavior.SetNull);
+            modelBuilder.Entity<SolicitudCotizacion>()
+                .HasMany(c => c.Adjuntos).WithOne(a => a.Solicitud).HasForeignKey(a => a.SolicitudCotizacionId).OnDelete(DeleteBehavior.Cascade);
             modelBuilder.Entity<Obra>()
                 .HasOne(o => o.ClienteRegistro).WithMany().HasForeignKey(o => o.ClienteId).OnDelete(DeleteBehavior.Restrict);
             modelBuilder.Entity<Usuario>()
