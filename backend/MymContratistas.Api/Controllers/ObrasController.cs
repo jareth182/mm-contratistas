@@ -63,7 +63,6 @@ namespace MymContratistas.Api.Controllers
             return Ok(hito);
         }
         // PUT: api/obras/hitos/{id}
-  // PUT: api/obras/hitos/{id}
         [HttpPut("hitos/{id}")]
         public async Task<IActionResult> ActualizarAvanceHito(int id, [FromForm] int nuevoAvance, [FromForm] string? descripcion, [FromForm] IFormFile? foto)
         {
@@ -85,31 +84,6 @@ namespace MymContratistas.Api.Controllers
                 hito.FotoUrl = foto.FileName; 
             }
 
-            if (nuevoAvance >= 100)
-            {
-                hito.AvancePorcentaje = 100;
-                hito.Estado = "Completado";
-            }
-            else if (nuevoAvance > 0)
-            {
-                hito.Estado = "En proceso";
-            }
-
-            await _context.SaveChangesAsync();
-            return Ok(hito);
-        }
-        public async Task<IActionResult> ActualizarAvanceHito(int id, [FromBody] int nuevoAvance)
-        {
-            var hito = await _context.Hitos.FindAsync(id);
-            if (hito == null)
-            {
-                return NotFound("El hito no existe.");
-            }
-
-            // Actualizamos el porcentaje
-            hito.AvancePorcentaje = nuevoAvance;
-
-            // Si llega a 100, cambiamos el estado automáticamente
             if (nuevoAvance >= 100)
             {
                 hito.AvancePorcentaje = 100;

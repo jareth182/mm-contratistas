@@ -287,7 +287,7 @@ V.proyectos = async () => {
            <td>${p.estado === 'Finalizado' ? '<span class="tg mt">Finalizado</span>' : '<span class="tg ok">En ejecución</span>'}</td>
            <td><div style="display:flex;align-items:center;gap:9px"><div class="bar" style="flex:1"><i style="width:${p.avancePorcentaje}%"></i></div>
             <span style="font-variant-numeric:tabular-nums">${p.avancePorcentaje}%</span></div></td>
-           <td style="width:90px"><button class="btn ghost sm" onclick="go('obra')">Abrir</button></td></tr>`).join('');
+           <td style="width:90px"><button class="btn ghost sm" onclick="abrirObra(${p.id})">Abrir</button></td></tr>`).join('');
       }
   } catch (error) {
       filas = `<tr><td colspan="5" style="text-align:center;color:var(--rust)">Error de conexión con el servidor.</td></tr>`;
@@ -321,13 +321,23 @@ V.obra = async () => {
   if (!ST.tab) ST.tab = 'hitos';
   const t = TABS.find(x => x[0] === ST.tab) || TABS[0];
   
+  // Sin una obra elegida se vuelve al listado
+  if (!ST.obraId) { ST.v = 'proyectos'; return V.proyectos(); }
+
+  let obra = null;
+  try {
+    const respuesta = await apiFetch(API + '/api/obras');
+    obra = (await respuesta.json()).find(o => o.id === ST.obraId) || null;
+  } catch (e) { /* se muestra el aviso de abajo */ }
+  if (!obra) { ST.obraId = null; ST.v = 'proyectos'; ST.msg = '<div class="msg bad">No se encontró la obra seleccionada.</div>'; return V.proyectos(); }
+
   const contenidoPestana = await TC[ST.tab]();
 
-  return `${navbar()}${crumbs([['Obras','proyectos'],[OBRA.nombre]])}
+  return `${navbar()}${crumbs([['Obras','proyectos'],[esc(obra.nombre)]])}
    <div class="page" style="padding-bottom:4px"><div class="phead" style="margin-bottom:12px"><div>
-     <h1>${OBRA.nombre}</h1><p>${OBRA.cliente} · ${OBRA.ubic} · ${OBRA.ini} a ${OBRA.fin}</p></div>
-     <div style="display:flex;gap:7px;align-items:center"><span class="tg ok">En ejecución</span>
-     <span class="tg mt">${OBRA.av}% ejecutado</span></div></div></div>
+     <h1>${esc(obra.nombre)}</h1><p>${esc(obra.cliente)}</p></div>
+     <div style="display:flex;gap:7px;align-items:center"><span class="tg ${obra.estado === 'Finalizado' ? 'mt' : 'ok'}">${obra.estado === 'Finalizado' ? 'Finalizado' : 'En ejecución'}</span>
+     <span class="tg mt">${obra.avancePorcentaje}% ejecutado</span></div></div></div>
    <div class="tabs"><div class="tabs-in">${TABS.map(x=>`<button class="${x[0]===ST.tab?'on':''}" onclick="tab('${x[0]}')">${x[1]}</button>`).join('')}</div></div>
    <div class="page">${cota(t[1],t[2])}${ST.msg||''}${contenidoPestana}</div>`;
 };
@@ -343,7 +353,7 @@ TC.hitos = async () => {
   try {
     const respuesta = await apiFetch(API + '/api/obras');
     const obras = await respuesta.json();
-    const obraActual = obras.length > 0 ? obras[0] : null;
+    const obraActual = obras.find(o => o.id === ST.obraId) || null;
     const hitosReales = obraActual && obraActual.hitos ? obraActual.hitos : [];
 
     if (hitosReales.length === 0) {
@@ -397,7 +407,7 @@ TC.hitos = async () => {
      <div class="f"><label>Peso (%)</label><input id="nuevo_hito_peso" type="number" placeholder="15"></div>
      <div class="f"><label>Fecha planificada</label><input id="nuevo_hito_fecha" placeholder="DD/MM/YYYY"></div>
     </div>
-    <button class="btn sm" onclick="guardarHito(1)">Guardar hito</button>
+    <button class="btn sm" onclick="guardarHito(${ST.obraId})">Guardar hito</button>
    </div></div>
    
    <div class="card" style="margin-top:20px"><div class="ch"><span class="hint">Listado de hitos del proyecto</span></div>
@@ -447,7 +457,7 @@ TC.cuad = async () => {
   try {
     const respuesta = await apiFetch(API + '/api/obras');
     const obras = await respuesta.json();
-    const obraActual = obras.length > 0 ? obras[0] : null;
+    const obraActual = obras.find(o => o.id === ST.obraId) || null;
     const cuadrillaReal = obraActual && obraActual.cuadrilla ? obraActual.cuadrilla : [];
     total = cuadrillaReal.length;
 
@@ -476,7 +486,7 @@ TC.cuad = async () => {
      </select></div>
      <div class="f"><label>Jornal diario (S/)</label><input id="nuevo_colab_jornal" type="number" placeholder="120"></div>
     </div>
-    <button class="btn sm" onclick="asignarColaborador(1)">Asignar colaborador</button>
+    <button class="btn sm" onclick="asignarColaborador(${ST.obraId})">Asignar colaborador</button>
    </div></div>
 
    <div class="card"><div class="ch"><span class="hint">${total} colaboradores en obra</span></div>
@@ -491,7 +501,7 @@ TC.docs = async () => {
   try {
     const respuesta = await apiFetch(API + '/api/obras');
     const obras = await respuesta.json();
-    const obraActual = obras.length > 0 ? obras[0] : null;
+    const obraActual = obras.find(o => o.id === ST.obraId) || null;
     const docsReales = obraActual && obraActual.documentos ? obraActual.documentos : [];
     total = docsReales.length;
     visibles = docsReales.filter(d => d.visibleCliente).length;
@@ -530,7 +540,7 @@ TC.docs = async () => {
       <option value="false">Oculto (Uso interno)</option>
      </select></div>
     </div>
-    <button class="btn sm" onclick="subirDocumento(1)">Subir documento</button>
+    <button class="btn sm" onclick="subirDocumento(${ST.obraId})">Subir documento</button>
     <p class="hint" style="margin-top:12px">Clasificaciones: Contrato, Permiso, Plano, Comprobante y Otro. PDF, JPG o PNG hasta 10 MB.</p>
    </div></div>
 
@@ -550,7 +560,7 @@ TC.pres = async () => {
   try {
     const respuesta = await apiFetch(API + '/api/obras');
     const obras = await respuesta.json();
-    const obraActual = obras.length > 0 ? obras[0] : null;
+    const obraActual = obras.find(o => o.id === ST.obraId) || null;
     const partidasReales = obraActual && obraActual.partidas ? obraActual.partidas : [];
     totalPartidas = partidasReales.length;
 
@@ -588,7 +598,7 @@ TC.pres = async () => {
         <input id="partida_monto" type="number" placeholder="48000" value="${editMonto}">
       </div>
      </div>
-     <button class="btn sm" onclick="${editandoId ? `actualizarPartida(${editandoId})` : `agregarPartidaFormulario(1)`}">
+     <button class="btn sm" onclick="${editandoId ? `actualizarPartida(${editandoId})` : `agregarPartidaFormulario(${ST.obraId})`}">
         ${editandoId ? 'Guardar cambios' : 'Agregar partida'}
      </button>
      ${editandoId ? `<button class="btn ghost sm" onclick="cancelarEdicionPartida()">Cancelar</button>` : ''}
@@ -609,7 +619,7 @@ TC.gastos = async () => {
   try {
     const respuesta = await apiFetch(API + '/api/obras');
     const obras = await respuesta.json();
-    const obraActual = obras.length > 0 ? obras[0] : null;
+    const obraActual = obras.find(o => o.id === ST.obraId) || null;
     
     const gastosReales = obraActual && obraActual.gastos ? obraActual.gastos : [];
     const partidasReales = obraActual && obraActual.partidas ? obraActual.partidas : [];
@@ -674,7 +684,7 @@ TC.pagos = async () => {
   try {
     const respuesta = await apiFetch(API + '/api/obras');
     const obras = await respuesta.json();
-    const obraActual = obras.length > 0 ? obras[0] : null;
+    const obraActual = obras.find(o => o.id === ST.obraId) || null;
     
     const pagosReales = obraActual && obraActual.pagos ? obraActual.pagos : [];
     const cuadrillaReal = obraActual && obraActual.cuadrilla ? obraActual.cuadrilla : [];
@@ -740,7 +750,7 @@ TC.econ = async () => {
   try {
     const respuesta = await apiFetch(API + '/api/obras');
     const obras = await respuesta.json();
-    const obraActual = obras.length > 0 ? obras[0] : null;
+    const obraActual = obras.find(o => o.id === ST.obraId) || null;
     const partidasReales = obraActual && obraActual.partidas ? obraActual.partidas : [];
     const gastosReales = obraActual && obraActual.gastos ? obraActual.gastos : [];
 
