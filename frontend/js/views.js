@@ -316,12 +316,13 @@ V.proyectos = async () => {
   let filas = '';
   try {
       const respuesta = await apiFetch(API + '/api/obras');
+      if (!respuesta.ok) throw new Error();
       const obrasAPI = await respuesta.json();
 
       if (obrasAPI.length === 0) {
           filas = `<tr><td colspan="5" style="text-align:center;color:var(--concrete)">No hay obras registradas en la base de datos.</td></tr>`;
       } else {
-          filas = obrasAPI.map(p => `<tr><td><b>${p.nombre}</b></td><td>${p.cliente}</td>
+          filas = obrasAPI.map(p => `<tr><td><b>${esc(p.nombre)}</b></td><td>${esc(p.cliente)}</td>
            <td>${p.estado === 'Finalizado' ? '<span class="tg mt">Finalizado</span>' : '<span class="tg ok">En ejecución</span>'}</td>
            <td><div style="display:flex;align-items:center;gap:9px"><div class="bar" style="flex:1"><i style="width:${p.avancePorcentaje}%"></i></div>
             <span style="font-variant-numeric:tabular-nums">${p.avancePorcentaje}%</span></div></td>
@@ -331,24 +332,34 @@ V.proyectos = async () => {
       filas = `<tr><td colspan="5" style="text-align:center;color:var(--rust)">Error de conexión con el servidor.</td></tr>`;
   }
 
+  const f = ST.formObra;
+  const cliente = f && f.cliente
+    ? `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);background:var(--surface)">
+        <span><b>${esc(f.cliente.nombre)}</b> · ${esc(f.cliente.tipoDocumento)} ${esc(f.cliente.documento)}</span>
+        <button class="btn link" onclick="cambiarClienteObra()">Cambiar</button></div>`
+    : `<input id="obra_cliente_q" autocomplete="off" placeholder="Escriba el nombre o el documento del cliente" oninput="buscarClientes()">
+       <div id="cli_resultados"></div>
+       <div class="hint" style="margin-top:4px">¿El cliente no está registrado? <button class="btn link" onclick="abrirModalCliente()">Registrar nuevo cliente</button></div>`;
+  const form = f ? `<div class="card" style="margin-top:22px" id="form_obra"><div class="ch"><h4>Registrar nuevo proyecto</h4>${ST.hu?'<span class="hu">HU11</span>':''}</div><div class="cb">
+     <div class="g2"><div class="f"><label>Nombre del proyecto</label><input id="nuevo_nombre" value="${esc(f.nombre)}" placeholder="Edificio multifamiliar Los Cedros"></div>
+      <div class="f"><label>Ubicación</label><input id="nueva_ubic" value="${esc(f.ubicacion)}" placeholder="Santiago de Surco, Lima"></div>
+      <div class="f"><label>Fecha de inicio</label><input id="nueva_inicio" type="date" value="${esc(f.fechaInicio)}"></div>
+      <div class="f"><label>Fecha estimada de fin</label><input id="nueva_fin" type="date" value="${esc(f.fechaFin)}"></div></div>
+     <div class="f"><label>Cliente</label>${cliente}</div>
+     <div class="f"><label>Descripción</label><textarea id="nueva_desc" placeholder="Edificio de cinco niveles con veinte departamentos y sótano.">${esc(f.descripcion)}</textarea></div>
+     <div class="hint" style="margin-bottom:10px">Al guardar, el proyecto queda «En Ejecución» y el cliente recibe acceso a su panel de seguimiento.</div>
+     <button class="btn" onclick="guardarObra()">Guardar</button>
+     <button class="btn ghost" style="margin-left:8px" onclick="cancelarObra()">Cancelar</button>
+    </div></div>` : '';
+
   return `${navbar()}${crumbs([['Obras']])}
    <div class="page"><div class="phead"><div><h1>Obras</h1><p>Expediente digital de cada proyecto: hitos, cuadrilla, documentos y control económico.</p></div>
-    <button class="btn" onclick="say('ok','Proyecto registrado correctamente. El cliente ya tiene acceso a su panel de seguimiento.')">Registrar obra</button></div>
+    <button class="btn" onclick="abrirFormularioObra()">Nuevo proyecto</button></div>
     ${ST.hu?'<div class="cota"><span class="t"></span><span class="b"></span><span class="r"></span><span class="hu">HU11</span></div>':''}
     ${ST.msg||''}
     <div class="card"><table><thead><tr><th>Obra</th><th>Cliente</th><th>Estado</th><th style="width:200px">Avance</th><th></th></tr></thead><tbody>
     ${filas}
-    </tbody></table></div>
-    <div class="card" style="margin-top:22px"><div class="ch"><h4>Registrar nueva obra</h4>${ST.hu?'<span class="hu">HU11</span>':''}</div><div class="cb">
-     <div class="g2"><div class="f"><label>Nombre del proyecto</label><input id="nuevo_nombre" placeholder="Edificio multifamiliar Los Cedros"></div>
-      <div class="f"><label>Ubicación</label><input id="nueva_ubic" placeholder="Santiago de Surco, Lima"></div>
-      <div class="f"><label>Fecha de inicio</label><input value="02/03/2026"></div>
-      <div class="f"><label>Fecha estimada de fin</label><input value="28/11/2026"></div></div>
-     <div class="f"><label>Cliente</label><input id="nuevo_cliente" placeholder="Escriba el nombre o el documento del cliente">
-      <div class="hint" style="margin-top:4px">¿El cliente no está registrado? <button class="btn link">Registrar nuevo cliente</button></div></div>
-     <div class="f"><label>Descripción</label><textarea placeholder="Edificio de cinco niveles con veinte departamentos y sótano."></textarea></div>
-     <button class="btn" onclick="guardarObra()">Guardar</button>
-    </div></div></div>`;
+    </tbody></table></div>${form}</div>`;
 };
 
 /* ---- obra con pestañas ---- */
@@ -375,7 +386,15 @@ V.obra = async () => {
    <div class="page" style="padding-bottom:4px"><div class="phead" style="margin-bottom:12px"><div>
      <h1>${esc(obra.nombre)}</h1><p>${esc(obra.cliente)}</p></div>
      <div style="display:flex;gap:7px;align-items:center"><span class="tg ${obra.estado === 'Finalizado' ? 'mt' : 'ok'}">${obra.estado === 'Finalizado' ? 'Finalizado' : 'En ejecución'}</span>
-     <span class="tg mt">${obra.avancePorcentaje}% ejecutado</span></div></div></div>
+     <span class="tg mt">${obra.avancePorcentaje}% ejecutado</span>
+     ${obra.estado === 'Finalizado'
+       ? (obra.fechaCierre ? `<span class="hint">Cierre real: ${fmtFecha(obra.fechaCierre)}</span>` : '')
+       : '<button class="btn ghost sm" onclick="abrirFinalizarObra()">Finalizar obra</button>'}</div></div>
+     ${ST.finalizando && obra.estado !== 'Finalizado' ? `<div class="card" style="margin-bottom:12px"><div class="cb" style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+       <div class="f" style="margin:0"><label>Fecha real de cierre</label>
+        <input id="fin_fecha" type="date" value="${new Date().toLocaleDateString('en-CA')}" max="${new Date().toLocaleDateString('en-CA')}" ${obra.fechaInicio ? `min="${obra.fechaInicio}"` : ''}></div>
+       <button class="btn" onclick="finalizarObra(${obra.id})">Confirmar cierre</button>
+       <button class="btn ghost" onclick="cancelarFinalizarObra()">Cancelar</button></div></div>` : ''}</div>
    <div class="tabs"><div class="tabs-in">${TABS.map(x=>`<button class="${x[0]===ST.tab?'on':''}" onclick="tab('${x[0]}')">${x[1]}</button>`).join('')}</div></div>
    <div class="page">${cota(t[1],t[2])}${ST.msg||''}${contenidoPestana}</div>`;
 };
