@@ -24,7 +24,7 @@ namespace MymContratistas.Api.Controllers
         {
             // El .Include le dice a Entity Framework que también traiga los hitos asociados
                 return await _context.Obras
-                .Include(o => o.Hitos)
+                .Include(o => o.Hitos.OrderBy(h => h.Orden))
                 .Include(o => o.Cuadrilla) 
                 .Include(o => o.Documentos) 
                 .Include(o => o.Partidas) 
@@ -43,25 +43,98 @@ namespace MymContratistas.Api.Controllers
             return CreatedAtAction(nameof(GetObras), new { id = obra.Id }, obra);
         }
 
+        public class HitoDto
+        {
+            public string? Nombre { get; set; }
+            public int Peso { get; set; }
+            public DateOnly? FechaPlanificada { get; set; }
+        }
+
+        private const int PesoTotal = 100;
+
+        // Valida los datos de un hito; devuelve el mensaje de error o null si todo está bien
+        private async Task<string?> ValidarHito(HitoDto dto, int obraId, int? hitoId)
+        {
+            if (string.IsNullOrWhiteSpace(dto.Nombre)) return "El nombre del hito es obligatorio.";
+            if (dto.Peso < 1 || dto.Peso > PesoTotal) return "El peso debe estar entre 1 y 100.";
+
+            var otros = await _context.Hitos.Where(h => h.ObraId == obraId && h.Id != hitoId).ToListAsync();
+            if (otros.Any(h => string.Equals(h.Nombre, dto.Nombre.Trim(), StringComparison.OrdinalIgnoreCase)))
+                return "Ya existe un hito con ese nombre en la obra.";
+
+            var acumulado = otros.Sum(h => h.Peso);
+            if (acumulado + dto.Peso > PesoTotal)
+                return $"La suma de los pesos no puede superar {PesoTotal}%. Disponible: {PesoTotal - acumulado}%.";
+            return null;
+        }
+
         // POST: api/obras/{obraId}/hitos
-        // Esta es la nueva ruta para registrar un hito en una obra específica
         [HttpPost("{obraId}/hitos")]
-        public async Task<ActionResult<Hito>> PostHito(int obraId, Hito hito)
+        public async Task<ActionResult<Hito>> PostHito(int obraId, [FromBody] HitoDto dto)
         {
             var obra = await _context.Obras.FindAsync(obraId);
-            if (obra == null)
-            {
-                return NotFound("La obra no existe.");
-            }
+            if (obra == null) return NotFound("La obra no existe.");
 
-            // Aseguramos que el hito se enlace correctamente a la obra
-            hito.ObraId = obraId;
-            
+            var error = await ValidarHito(dto, obraId, null);
+            if (error != null) return BadRequest(error);
+
+            var siguienteOrden = (await _context.Hitos.Where(h => h.ObraId == obraId).MaxAsync(h => (int?)h.Orden) ?? 0) + 1;
+            var hito = new Hito
+            {
+                Nombre = dto.Nombre!.Trim(),
+                Peso = dto.Peso,
+                FechaPlanificada = dto.FechaPlanificada,
+                Orden = siguienteOrden,
+                Estado = "Pendiente",
+                AvancePorcentaje = 0,
+                ObraId = obraId
+            };
+
             _context.Hitos.Add(hito);
             await _context.SaveChangesAsync();
-
             return Ok(hito);
         }
+
+        // Un hito es "pendiente" mientras no tenga ningún avance registrado
+        private static bool TieneAvance(Hito h) =>
+            h.Estado != "Pendiente" || h.AvancePorcentaje > 0 || !string.IsNullOrEmpty(h.DescripcionAvance) || !string.IsNullOrEmpty(h.FotoUrl);
+
+        // PUT: api/obras/hitos/{id}/definicion  (solo hitos pendientes)
+        [HttpPut("hitos/{id}/definicion")]
+        public async Task<IActionResult> EditarHito(int id, [FromBody] HitoDto dto)
+        {
+            var hito = await _context.Hitos.FindAsync(id);
+            if (hito == null) return NotFound("El hito no existe.");
+            if (TieneAvance(hito)) return BadRequest("Solo se pueden editar hitos pendientes, sin avances registrados.");
+
+            var error = await ValidarHito(dto, hito.ObraId, id);
+            if (error != null) return BadRequest(error);
+
+            hito.Nombre = dto.Nombre!.Trim();
+            hito.Peso = dto.Peso;
+            hito.FechaPlanificada = dto.FechaPlanificada;
+            await _context.SaveChangesAsync();
+            return Ok(hito);
+        }
+
+        // DELETE: api/obras/hitos/{id}
+        [HttpDelete("hitos/{id}")]
+        public async Task<IActionResult> EliminarHito(int id)
+        {
+            var hito = await _context.Hitos.FindAsync(id);
+            if (hito == null) return NotFound("El hito no existe.");
+            if (TieneAvance(hito)) return BadRequest("No se puede eliminar un hito con avances o gastos asociados.");
+
+            _context.Hitos.Remove(hito);
+            await _context.SaveChangesAsync();
+
+            // Mantiene el orden correlativo (1, 2, 3...) de los hitos restantes
+            var restantes = await _context.Hitos.Where(h => h.ObraId == hito.ObraId).OrderBy(h => h.Orden).ToListAsync();
+            for (var i = 0; i < restantes.Count; i++) restantes[i].Orden = i + 1;
+            await _context.SaveChangesAsync();
+            return Ok();
+        }
+
         // PUT: api/obras/hitos/{id}
         [HttpPut("hitos/{id}")]
         public async Task<IActionResult> ActualizarAvanceHito(int id, [FromForm] int nuevoAvance, [FromForm] string? descripcion, [FromForm] IFormFile? foto)
@@ -88,6 +161,7 @@ namespace MymContratistas.Api.Controllers
             {
                 hito.AvancePorcentaje = 100;
                 hito.Estado = "Completado";
+                hito.FechaReal ??= DateOnly.FromDateTime(DateTime.Now);
             }
             else if (nuevoAvance > 0)
             {

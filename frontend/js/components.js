@@ -84,3 +84,19 @@ function elev(){
     <div class="cap"><span>Inicio ${OBRA.ini}</span><span>Fin estimado ${OBRA.fin}</span></div>
   </div></div>`;
 }
+
+// Línea de tiempo de hitos con datos del servidor (avance ponderado por el peso de cada hito)
+function elevHitos(hitos) {
+  const tt = hitos.length;
+  if (!tt) return '';
+  const dn = hitos.filter(h => h.avancePorcentaje === 100).length;
+  const f = ((dn + (hitos[dn] ? hitos[dn].avancePorcentaje / 100 : 0)) / tt) * 100;
+  const global = Math.round(hitos.reduce((a, h) => a + (h.avancePorcentaje * h.peso) / 100, 0));
+  return `<div class="elev"><div class="tr">
+    <div class="pc">${global}% ejecutado · ${dn} de ${tt} hitos cerrados</div>
+    <div class="gr"></div><div class="fl" style="width:${f.toFixed(1)}%"></div>
+    <div class="cols">${hitos.map(h => `<div class="col ${h.avancePorcentaje === 100 ? 'dn' : (h.avancePorcentaje > 0 ? 'nw' : '')}">
+      <div class="mk2"></div><div class="nm">${esc(h.nombre)}</div><div class="mt2">${h.avancePorcentaje}% · peso ${h.peso}%</div></div>`).join('')}</div>
+    <div class="cap"><span>Inicio del proyecto</span><span>Entrega</span></div>
+  </div></div>`;
+}

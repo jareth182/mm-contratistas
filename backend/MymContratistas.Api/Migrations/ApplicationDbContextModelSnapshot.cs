@@ -166,11 +166,11 @@ namespace MymContratistas.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("FechaPlanificada")
-                        .HasColumnType("text");
+                    b.Property<DateOnly?>("FechaPlanificada")
+                        .HasColumnType("date");
 
-                    b.Property<string>("FechaReal")
-                        .HasColumnType("text");
+                    b.Property<DateOnly?>("FechaReal")
+                        .HasColumnType("date");
 
                     b.Property<string>("FotoUrl")
                         .HasColumnType("text");
@@ -180,6 +180,9 @@ namespace MymContratistas.Api.Migrations
                         .HasColumnType("text");
 
                     b.Property<int>("ObraId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Orden")
                         .HasColumnType("integer");
 
                     b.Property<int>("Peso")
