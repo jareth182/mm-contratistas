@@ -1,20 +1,34 @@
-// Solo actualizamos la variable ST que ya viene de views.js
-ST.usuario = null;
-ST.perfil = 'pub';
+// Sesión restaurada desde el almacenamiento (si el usuario recarga la página)
+ST.usuario = (sesionLeer() || {}).usuario || null;
+ST.perfil = ST.usuario ? (ST.usuario.rol === 'Cliente' ? 'cli' : 'adm') : 'pub';
 
-// Si no hay una vista definida al cargar, lo mandamos al login (o home)
-if (!ST.v) {
-  ST.v = 'login'; 
-}
 /* ================= control ================= */
 function go(v){ST.v=v;ST.msg=null;ST.menu=null;ST.nav=false;draw();window.scrollTo({top:0})}
 function tab(t){ST.tab=t;ST.msg=null;draw()}
-function perfil(p,v){ST.perfil=p;ST.v=v;ST.menu=null;ST.msg=null;draw();window.scrollTo({top:0})}
 function tog(m,e){e.stopPropagation();ST.menu=ST.menu===m?null:m;draw()}
 function say(t,x){ST.msg=`<div class="msg ${t}">${x}</div>`;draw();
   const m=document.querySelector('.msg');if(m)m.scrollIntoView({block:'center'})}
 
+// Control de acceso: vistas privadas solo con sesión y según el rol
+function guardarAcceso() {
+  const rol = ST.usuario ? ST.usuario.rol : null;
+  ST.perfil = rol ? (rol === 'Cliente' ? 'cli' : 'adm') : 'pub';
+
+  if (VISTAS_PRIVADAS.includes(ST.v)) {
+    if (!rol) {
+      ST.v = 'login';
+      if (!ST.msg) ST.msg = '<div class="msg warn">Inicie sesión para continuar.</div>';
+    } else if (!puedeVer(rol, ST.v)) {
+      ST.v = vistaInicio(rol);
+      ST.msg = '<div class="msg bad">No tiene permisos para acceder a esa sección.</div>';
+    }
+  } else if (rol && ST.v === 'login') {
+    ST.v = vistaInicio(rol);
+  }
+}
+
 async function draw(){
+  guardarAcceso();
   const vista = V[ST.v] || V.home;
   document.getElementById('app').innerHTML = await vista();
   location.hash = ST.v;
@@ -39,7 +53,7 @@ async function guardarObra() {
   };
 
   try {
-    const respuesta = await fetch('http://localhost:5067/api/obras', {
+    const respuesta = await apiFetch(API + '/api/obras', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -86,7 +100,7 @@ async function guardarHito(obraId) {
   };
 
   try {
-    const respuesta = await fetch(`http://localhost:5067/api/obras/${obraId}/hitos`, {
+    const respuesta = await apiFetch(`${API}/api/obras/${obraId}/hitos`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -136,7 +150,7 @@ async function actualizarAvanceDesdeFormulario(hitoId) {
   }
 
   try {
-    const respuesta = await fetch(`http://localhost:5067/api/obras/hitos/${hitoId}`, {
+    const respuesta = await apiFetch(`${API}/api/obras/hitos/${hitoId}`, {
       method: 'PUT',
       body: formData 
     });
@@ -179,7 +193,7 @@ async function asignarColaborador(obraId) {
   };
 
   try {
-    const respuesta = await fetch(`http://localhost:5067/api/obras/${obraId}/cuadrilla`, {
+    const respuesta = await apiFetch(`${API}/api/obras/${obraId}/cuadrilla`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(nuevoColaborador)
@@ -200,7 +214,7 @@ async function retirarColaborador(colabId) {
   if (!confirm("¿Está seguro de registrar la salida de este colaborador?")) return;
 
   try {
-    const respuesta = await fetch(`http://localhost:5067/api/obras/cuadrilla/${colabId}`, {
+    const respuesta = await apiFetch(`${API}/api/obras/cuadrilla/${colabId}`, {
       method: 'DELETE'
     });
 
@@ -233,7 +247,7 @@ async function subirDocumento(obraId) {
   formData.append("visibleCliente", visible);
 
   try {
-    const respuesta = await fetch(`http://localhost:5067/api/obras/${obraId}/documentos`, {
+    const respuesta = await apiFetch(`${API}/api/obras/${obraId}/documentos`, {
       method: 'POST',
       body: formData
     });
@@ -253,7 +267,7 @@ async function eliminarDocumento(docId) {
   if (!confirm("¿Está seguro de eliminar este documento de la obra?")) return;
 
   try {
-    const respuesta = await fetch(`http://localhost:5067/api/obras/documentos/${docId}`, {
+    const respuesta = await apiFetch(`${API}/api/obras/documentos/${docId}`, {
       method: 'DELETE'
     });
 
@@ -269,7 +283,7 @@ async function eliminarDocumento(docId) {
 }
 
 function descargarDocumento(docId) {
-  window.open(`http://localhost:5067/api/obras/documentos/${docId}/descargar`, '_blank');
+  descargarArchivo(`${API}/api/obras/documentos/${docId}/descargar`);
 }
 
 // --- PRESUPUESTO / PARTIDAS ---
@@ -295,7 +309,7 @@ async function agregarPartidaFormulario(obraId) {
   };
 
   try {
-    const respuesta = await fetch(`http://localhost:5067/api/obras/${obraId}/partidas`, {
+    const respuesta = await apiFetch(`${API}/api/obras/${obraId}/partidas`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(nuevaPartida)
@@ -339,7 +353,7 @@ async function actualizarPartida(partidaId) {
   };
 
   try {
-    const respuesta = await fetch(`http://localhost:5067/api/obras/partidas/${partidaId}`, {
+    const respuesta = await apiFetch(`${API}/api/obras/partidas/${partidaId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(partidaActualizada)
@@ -361,7 +375,7 @@ async function eliminarPartida(partidaId) {
   if (!confirm("¿Está seguro de eliminar esta partida del presupuesto?")) return;
 
   try {
-    const respuesta = await fetch(`http://localhost:5067/api/obras/partidas/${partidaId}`, {
+    const respuesta = await apiFetch(`${API}/api/obras/partidas/${partidaId}`, {
       method: 'DELETE'
     });
 
@@ -423,7 +437,7 @@ async function registrarGasto(obraId, requiereComprobante) {
   }
 
   try {
-    const respuesta = await fetch(`http://localhost:5067/api/obras/${obraId}/gastos`, {
+    const respuesta = await apiFetch(`${API}/api/obras/${obraId}/gastos`, {
       method: 'POST',
       body: formData
     });
@@ -440,14 +454,14 @@ async function registrarGasto(obraId, requiereComprobante) {
 }
 
 function descargarComprobante(gastoId) {
-  window.open(`http://localhost:5067/api/obras/gastos/${gastoId}/descargar`, '_blank');
+  descargarArchivo(`${API}/api/obras/gastos/${gastoId}/descargar`);
 }
 
 async function anularGasto(gastoId) {
   if (!confirm("¿Está seguro de que desea anular este gasto? El monto se devolverá al saldo de la partida.")) return;
 
   try {
-    const respuesta = await fetch(`http://localhost:5067/api/obras/gastos/${gastoId}/anular`, {
+    const respuesta = await apiFetch(`${API}/api/obras/gastos/${gastoId}/anular`, {
       method: 'PUT'
     });
 
@@ -503,7 +517,7 @@ async function registrarPago(obraId, requiereConstancia) {
   }
 
   try {
-    const respuesta = await fetch(`http://localhost:5067/api/obras/${obraId}/pagos`, {
+    const respuesta = await apiFetch(`${API}/api/obras/${obraId}/pagos`, {
       method: 'POST',
       body: formData
     });
@@ -520,7 +534,7 @@ async function registrarPago(obraId, requiereConstancia) {
 }
 
 function descargarConstancia(pagoId) {
-  window.open(`http://localhost:5067/api/obras/pagos/${pagoId}/descargar`, '_blank');
+  descargarArchivo(`${API}/api/obras/pagos/${pagoId}/descargar`);
 }
 
 function formatearPeriodo(input) {
@@ -600,6 +614,25 @@ function exportarControlEconomico() {
 
 // --- AUTENTICACIÓN (HU-01 y HU-03) ---
 
+function cerrarSesion() {
+  sesionBorrar();
+  ST.usuario = null;
+  ST.menu = null;
+  ST.msg = null;
+  go('home');
+}
+
+// El servidor rechazó el token (venció o la cuenta fue desactivada)
+function sesionExpirada() {
+  if (!ST.usuario) return;
+  sesionBorrar();
+  ST.usuario = null;
+  ST.menu = null;
+  ST.v = 'login';
+  ST.msg = '<div class="msg warn">Su sesión expiró. Inicie sesión nuevamente.</div>';
+  draw();
+}
+
 async function iniciarSesion() {
   const correo = document.getElementById('login_correo').value;
   const password = document.getElementById('login_password').value;
@@ -610,7 +643,7 @@ async function iniciarSesion() {
   }
 
   try {
-    const respuesta = await fetch('http://localhost:5067/api/auth/login', {
+    const respuesta = await apiFetch(API + '/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ correo: correo, password: password })
@@ -619,13 +652,10 @@ async function iniciarSesion() {
     const data = await respuesta.json();
 
     if (respuesta.ok) {
-      ST.usuario = data;
-      
-      if (data.rol === 'Cliente') {
-        perfil('cli', 'c-obra');
-      } else {
-        perfil('adm', 'tablero');
-      }
+      sesionGuardar({ token: data.token, expira: data.expira, usuario: data.usuario });
+      ST.usuario = data.usuario;
+      ST.msg = null;
+      go(vistaInicio(data.usuario.rol));
     } else {
       say('bad', data.mensaje);
     }
@@ -642,7 +672,7 @@ async function enviarEnlace() {
   const urlBase = window.location.href.split('#')[0]; 
 
   try {
-    const res = await fetch('http://localhost:5067/api/auth/recuperar', {
+    const res = await apiFetch(API + '/api/auth/recuperar', {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
@@ -663,13 +693,7 @@ async function enviarEnlace() {
 }
 
 async function guardarNuevaContrasena() {
-  // 1. Extraemos el token secreto directamente de la URL que abrió el correo
-  let token = "";
-  if (window.location.hash.includes('?token=')) {
-    token = window.location.hash.split('?token=')[1];
-  } else {
-    token = document.getElementById('reset_token')?.value; 
-  }
+  const token = ST.token_temp;
 
   const pass1 = document.getElementById('reset_pass1').value;
   const pass2 = document.getElementById('reset_pass2').value;
@@ -679,7 +703,7 @@ async function guardarNuevaContrasena() {
   if (pass1 !== pass2) return say('bad', 'Las contraseñas no coinciden.');
 
   try {
-    const res = await fetch('http://localhost:5067/api/auth/restablecer', {
+    const res = await apiFetch(API + '/api/auth/restablecer', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: token, nuevaPassword: pass1 })
@@ -701,9 +725,14 @@ async function guardarNuevaContrasena() {
 
 document.addEventListener('click',()=>{if(ST.menu){ST.menu=null;draw()}});
 let h = location.hash.replace('#','');
-if (h.includes('?')) h = h.split('?')[0]; // Separa el token para que el sistema reconozca la vista
+if (h.includes('?')) {
+  // El token de recuperación viaja en el enlace del correo: se guarda y se limpia la URL
+  const params = new URLSearchParams(h.split('?')[1]);
+  if (params.get('token')) ST.token_temp = params.get('token');
+  h = h.split('?')[0];
+}
 
-if(h&&V[h]){ST.v=h;ST.perfil=h.startsWith('c-')?'cli':['tablero','proyectos','obra','personal','docpers','alertas','usuarios','portafolio','servicios-adm'].includes(h)?'adm':'pub'}
+if (h && V[h]) ST.v = h;
 
 // Arrancar la plataforma
 draw();

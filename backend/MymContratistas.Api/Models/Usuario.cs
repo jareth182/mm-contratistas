@@ -5,7 +5,7 @@ namespace MymContratistas.Api.Models
         public int Id { get; set; }
         public string NombreCompleto { get; set; } = string.Empty;
         public string Correo { get; set; } = string.Empty;
-        public string Password { get; set; } = string.Empty; // En producción debe estar encriptada
+        public string PasswordHash { get; set; } = string.Empty;
         public string Rol { get; set; } = string.Empty; // Administrador, Gerente de Operaciones, Cliente
         public string Estado { get; set; } = "Activo"; // Activo, Inactivo
         

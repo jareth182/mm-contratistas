@@ -9,30 +9,37 @@ function navbar(){
       <button class="btn ghost sm" style="color:#fff;border-color:#4A6072" onclick="go('login')">Ingresar</button>`;
   }else if(P==='adm'){
     const on=v=>ST.v===v?'on':'';
+    const rol=ST.usuario.rol;
+    const ve=v=>puedeVer(rol,v);
     links=`<button class="${on('tablero')}" onclick="go('tablero')">Tablero</button>
       <button class="${on('proyectos')||(ST.v==='obra'?'on':'')}" onclick="go('proyectos')">Obras</button>
       <button class="${on('personal')||(ST.v==='docpers'?'on':'')}" onclick="go('personal')">Personal</button>
-      <span class="ddwrap"><button class="${on('portafolio')||on('servicios-adm')}" onclick="tog('cont',event)">Sitio web ▾</button>
+      ${ve('portafolio')?`<span class="ddwrap"><button class="${on('portafolio')||on('servicios-adm')}" onclick="tog('cont',event)">Sitio web ▾</button>
         ${ST.menu==='cont'?`<div class="dd left">
           <button class="item" onclick="go('portafolio')">Portafolio<span class="sub">Obras que se muestran al público</span></button>
-          <button class="item" onclick="go('servicios-adm')">Servicios<span class="sub">Catálogo publicado en el sitio</span></button></div>`:''}</span>
-      <button class="${on('usuarios')}" onclick="go('usuarios')">Usuarios</button>`;
+          <button class="item" onclick="go('servicios-adm')">Servicios<span class="sub">Catálogo publicado en el sitio</span></button></div>`:''}</span>`:''}
+      ${ve('usuarios')?`<button class="${on('usuarios')}" onclick="go('usuarios')">Usuarios</button>`:''}`;
     search=`<div class="navsearch"><span style="color:#6E8496">⌕</span><input placeholder="Buscar obra o colaborador"></div>`;
-    user=userMenu('MZ','Marco Zapata','Gerente de Operaciones',true);
+    user=userMenu(iniciales(ST.usuario.nombreCompleto),ST.usuario.nombreCompleto,rol,true);
   }else{
     const on=v=>ST.v===v?'on':'';
     links=`<button class="${on('c-obra')}" onclick="go('c-obra')">Mi obra</button>
       <button class="${on('c-gastos')}" onclick="go('c-gastos')">Gastos</button>
       <button class="${on('c-cmt')}" onclick="go('c-cmt')">Comentarios</button>`;
-    user=userMenu('DR','Inversiones Del Río','Cliente',false);
+    user=userMenu(iniciales(ST.usuario.nombreCompleto),ST.usuario.nombreCompleto,ST.usuario.rol,false);
   }
   return `<header class="nav"><div class="nav-in">
-    <a class="brand" onclick="go('${P==='pub'?'home':P==='adm'?'tablero':'c-obra'}')" style="cursor:pointer">
+    <a class="brand" onclick="go('${P==='pub'?'home':vistaInicio(ST.usuario.rol)}')" style="cursor:pointer">
       <span class="mk"></span><span><b>M/M Contratistas</b><small>GESTIÓN DE OBRA</small></span></a>
     <button class="iconbtn burger" onclick="ST.nav=!ST.nav;draw()">☰</button>
     <nav class="nav-links ${ST.nav?'':'closed'}" id="nl">${links}</nav>
     <div class="nav-right">${search}${user}</div>
   </div></header>`;
+}
+
+function iniciales(nombre){
+  const p=(nombre||'').trim().split(/\s+/).filter(Boolean);
+  return ((p[0]||'')[0]||'').toUpperCase()+((p[1]||'')[0]||'').toUpperCase();
 }
 
 function userMenu(ini,nom,rol,alert){
@@ -47,10 +54,7 @@ function userMenu(ini,nom,rol,alert){
         <div class="dh"><span>Sesión activa</span></div>
         <button class="item">Mi perfil<span class="sub">${nom} · ${rol}</span></button>
         <button class="item" onclick="ST.hu=!ST.hu;ST.menu=null;draw()">${ST.hu?'Ocultar':'Mostrar'} códigos de historia<span class="sub">Trazabilidad con el backlog</span></button>
-        <div class="dh" style="border-top:1px solid var(--line-2)"><span>Cambiar de perfil</span></div>
-        <button class="item" onclick="perfil('adm','tablero')">Gerente de Operaciones</button>
-        <button class="item" onclick="perfil('cli','c-obra')">Cliente</button>
-        <button class="item" onclick="perfil('pub','home')" style="color:var(--rust)">Cerrar sesión</button>
+        <button class="item" onclick="cerrarSesion()" style="color:var(--rust)">Cerrar sesión</button>
       </div>`:''}</span>`;
 }
 

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MymContratistas.Api.Data;
@@ -7,6 +8,7 @@ namespace MymContratistas.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize(Roles = Roles.Personal)]
     public class ObrasController : ControllerBase
     {
         private readonly ApplicationDbContext _context;

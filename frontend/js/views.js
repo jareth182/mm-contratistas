@@ -79,9 +79,8 @@ V.login=()=>`${navbar()}
   <p>Acceso para el personal de M/M Contratistas y para clientes con obra en curso.</p></div>${ST.hu?'<span class="hu">HU01</span>':''}</div>
   ${ST.msg||''}
   <div class="card"><div class="cb">
-   <!-- Agregamos los ID para capturar los datos -->
-   <div class="f"><label>Correo electrónico</label><input id="login_correo" value="marco.zapata@mym.pe"></div>
-   <div class="f"><label>Contraseña</label><input type="password" id="login_password" value="123"></div>
+   <div class="f"><label>Correo electrónico</label><input id="login_correo" type="email" placeholder="nombre@mym.pe" autocomplete="username" onkeydown="if(event.key==='Enter')iniciarSesion()"></div>
+   <div class="f"><label>Contraseña</label><input type="password" id="login_password" autocomplete="current-password" onkeydown="if(event.key==='Enter')iniciarSesion()"></div>
    
    <button class="btn" style="width:100%" onclick="iniciarSesion()">Ingresar</button>
    
@@ -114,9 +113,10 @@ V.nueva_password=()=>`${navbar()}
 
 /* ---- admin ---- */
 V.tablero=()=>`${navbar()}${crumbs([['Tablero']])}
- <div class="page"><div class="phead"><div><h1>Buenos días, Marco</h1>
+ <div class="page"><div class="phead"><div><h1>Buenos días, ${ST.usuario.nombreCompleto.split(' ')[0]}</h1>
    <p>Jueves 10 de septiembre de 2026 · 3 obras en ejecución</p></div>
    <button class="btn" onclick="go('proyectos')">Registrar obra</button></div>
+  ${ST.msg||''}
   <div class="kpi">
    <div><div class="v">3</div><div class="l">Obras en ejecución</div></div>
    <div><div class="v">14</div><div class="l">Colaboradores activos</div></div>
@@ -235,7 +235,7 @@ V.alertas=()=>`${navbar()}${crumbs([['Personal','personal'],['Alertas de documen
 V.proyectos = async () => {
   let filas = '';
   try {
-      const respuesta = await fetch('http://localhost:5067/api/obras');
+      const respuesta = await apiFetch(API + '/api/obras');
       const obrasAPI = await respuesta.json();
 
       if (obrasAPI.length === 0) {
@@ -299,7 +299,7 @@ TC.hitos = async () => {
   let lineaDeTiempo = '';
 
   try {
-    const respuesta = await fetch('http://localhost:5067/api/obras');
+    const respuesta = await apiFetch(API + '/api/obras');
     const obras = await respuesta.json();
     const obraActual = obras.length > 0 ? obras[0] : null;
     const hitosReales = obraActual && obraActual.hitos ? obraActual.hitos : [];
@@ -403,7 +403,7 @@ TC.cuad = async () => {
   let filas = '';
   let total = 0;
   try {
-    const respuesta = await fetch('http://localhost:5067/api/obras');
+    const respuesta = await apiFetch(API + '/api/obras');
     const obras = await respuesta.json();
     const obraActual = obras.length > 0 ? obras[0] : null;
     const cuadrillaReal = obraActual && obraActual.cuadrilla ? obraActual.cuadrilla : [];
@@ -447,7 +447,7 @@ TC.docs = async () => {
   let filas = '';
   let total = 0, visibles = 0;
   try {
-    const respuesta = await fetch('http://localhost:5067/api/obras');
+    const respuesta = await apiFetch(API + '/api/obras');
     const obras = await respuesta.json();
     const obraActual = obras.length > 0 ? obras[0] : null;
     const docsReales = obraActual && obraActual.documentos ? obraActual.documentos : [];
@@ -506,7 +506,7 @@ TC.pres = async () => {
   let editNombre = '', editMonto = '';
   
   try {
-    const respuesta = await fetch('http://localhost:5067/api/obras');
+    const respuesta = await apiFetch(API + '/api/obras');
     const obras = await respuesta.json();
     const obraActual = obras.length > 0 ? obras[0] : null;
     const partidasReales = obraActual && obraActual.partidas ? obraActual.partidas : [];
@@ -565,7 +565,7 @@ TC.gastos = async () => {
   let opcionesPartidas = '';
   
   try {
-    const respuesta = await fetch('http://localhost:5067/api/obras');
+    const respuesta = await apiFetch(API + '/api/obras');
     const obras = await respuesta.json();
     const obraActual = obras.length > 0 ? obras[0] : null;
     
@@ -630,7 +630,7 @@ TC.pagos = async () => {
   let opcionesColaboradores = '';
 
   try {
-    const respuesta = await fetch('http://localhost:5067/api/obras');
+    const respuesta = await apiFetch(API + '/api/obras');
     const obras = await respuesta.json();
     const obraActual = obras.length > 0 ? obras[0] : null;
     
@@ -696,7 +696,7 @@ TC.econ = async () => {
   let tp = 0, tg = 0;
   
   try {
-    const respuesta = await fetch('http://localhost:5067/api/obras');
+    const respuesta = await apiFetch(API + '/api/obras');
     const obras = await respuesta.json();
     const obraActual = obras.length > 0 ? obras[0] : null;
     const partidasReales = obraActual && obraActual.partidas ? obraActual.partidas : [];
@@ -740,6 +740,7 @@ V['c-obra']=()=>`${navbar()}${crumbs([['Mi obra']])}
  <div class="page"><div class="phead"><div><h1>${OBRA.nombre}</h1>
   <p>${OBRA.ubic} · Inicio ${OBRA.ini} · Fin estimado ${OBRA.fin}</p></div>
   <div style="display:flex;gap:7px;align-items:center"><span class="tg ok">En ejecución</span>${ST.hu?'<span class="hu">HU20</span>':''}</div></div>
+  ${ST.msg||''}
  ${elev()}
  <div class="card" style="margin-top:20px"><div class="ch"><h4>Etapas de la obra</h4></div>
   <table><thead><tr><th>Hito</th><th>Estado</th><th>Fecha planificada</th><th>Fecha real</th></tr></thead><tbody>

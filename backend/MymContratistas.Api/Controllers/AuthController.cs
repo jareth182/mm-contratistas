@@ -3,6 +3,10 @@ using Microsoft.EntityFrameworkCore;
 using MymContratistas.Api.Models;
 using MymContratistas.Api.Data;
 using System.Net;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
+using MymContratistas.Api.Services;
 using System.Net.Mail;
 
 namespace MymContratistas.Api.Controllers
@@ -11,58 +15,98 @@ namespace MymContratistas.Api.Controllers
     [ApiController]
     public class AuthController : ControllerBase
     {
-        private readonly ApplicationDbContext _context;
+        private const int MaxIntentosFallidos = 5;
+        private const int MinutosBloqueo = 15;
 
-        public AuthController(ApplicationDbContext context)
+        private readonly ApplicationDbContext _context;
+        private readonly IPasswordHasher<Usuario> _hasher;
+        private readonly TokenService _tokens;
+
+        public AuthController(ApplicationDbContext context, IPasswordHasher<Usuario> hasher, TokenService tokens)
         {
             _context = context;
+            _hasher = hasher;
+            _tokens = tokens;
         }
 
+        private object RespuestaSesion(Usuario usuario)
+        {
+            var (token, expira) = _tokens.Generar(usuario);
+            return new
+            {
+                token,
+                expira,
+                usuario = new { id = usuario.Id, nombreCompleto = usuario.NombreCompleto, correo = usuario.Correo, rol = usuario.Rol }
+            };
+        }
+
+        [AllowAnonymous]
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginDto login)
         {
-            var usuario = await _context.Usuarios.FirstOrDefaultAsync(u => u.Correo == login.Correo);
+            var correo = (login.Correo ?? string.Empty).Trim().ToLowerInvariant();
+            if (correo.Length == 0 || string.IsNullOrEmpty(login.Password))
+                return BadRequest(new { mensaje = "Debe ingresar su correo y contraseña." });
 
-            if (usuario == null)
-                return Unauthorized(new { mensaje = "Usuario o contraseña incorrectos." });
+            var usuario = await _context.Usuarios.FirstOrDefaultAsync(u => u.Correo.ToLower() == correo);
 
-            if (usuario.Estado == "Inactivo")
-                return Unauthorized(new { mensaje = "Su cuenta se encuentra desactivada." });
+            // Mismo mensaje si el usuario no existe o la contraseña es incorrecta
+            var credencialesInvalidas = Unauthorized(new { mensaje = "Usuario o contraseña incorrectos." });
+            if (usuario == null) return credencialesInvalidas;
 
-            if (usuario.BloqueoHasta.HasValue && usuario.BloqueoHasta.Value > DateTime.Now)
+            if (usuario.BloqueoHasta.HasValue && usuario.BloqueoHasta.Value > DateTime.UtcNow)
             {
-                var minutosRestantes = (usuario.BloqueoHasta.Value - DateTime.Now).Minutes;
-                if (minutosRestantes == 0) minutosRestantes = 1; 
-                return Unauthorized(new { mensaje = $"Cuenta bloqueada temporalmente por seguridad. Intente nuevamente en {minutosRestantes} minutos." });
+                var minutos = (int)Math.Ceiling((usuario.BloqueoHasta.Value - DateTime.UtcNow).TotalMinutes);
+                return Unauthorized(new { mensaje = $"Cuenta bloqueada temporalmente por seguridad. Intente nuevamente en {minutos} minutos." });
             }
 
-            if (usuario.Password != login.Password)
+            var resultado = _hasher.VerifyHashedPassword(usuario, usuario.PasswordHash, login.Password);
+            if (resultado == PasswordVerificationResult.Failed)
             {
                 usuario.IntentosFallidos++;
-                
-                if (usuario.IntentosFallidos >= 5)
+                if (usuario.IntentosFallidos >= MaxIntentosFallidos)
                 {
-                    usuario.BloqueoHasta = DateTime.Now.AddMinutes(15);
+                    usuario.BloqueoHasta = DateTime.UtcNow.AddMinutes(MinutosBloqueo);
+                    usuario.IntentosFallidos = 0;
                     await _context.SaveChangesAsync();
-                    return Unauthorized(new { mensaje = "Cuenta bloqueada temporalmente por seguridad. Intente nuevamente en 15 minutos." });
+                    return Unauthorized(new { mensaje = $"Cuenta bloqueada temporalmente por seguridad. Intente nuevamente en {MinutosBloqueo} minutos." });
                 }
-                
                 await _context.SaveChangesAsync();
-                return Unauthorized(new { mensaje = "Usuario o contraseña incorrectos." });
+                return credencialesInvalidas;
             }
+
+            if (usuario.Estado == "Inactivo")
+                return Unauthorized(new { mensaje = "Su cuenta se encuentra desactivada. Comuníquese con el administrador." });
+
+            if (resultado == PasswordVerificationResult.SuccessRehashNeeded)
+                usuario.PasswordHash = _hasher.HashPassword(usuario, login.Password);
 
             usuario.IntentosFallidos = 0;
             usuario.BloqueoHasta = null;
             await _context.SaveChangesAsync();
 
-            return Ok(new { 
-                id = usuario.Id, 
-                nombreCompleto = usuario.NombreCompleto, 
-                rol = usuario.Rol,
-                correo = usuario.Correo
-            });
+            return Ok(RespuestaSesion(usuario));
         }
 
+        // Devuelve los datos del usuario autenticado (valida que el token siga vigente)
+        [Authorize]
+        [HttpGet("me")]
+        public async Task<IActionResult> Me()
+        {
+            var usuario = await UsuarioActual();
+            if (usuario == null) return Unauthorized();
+            return Ok(new { id = usuario.Id, nombreCompleto = usuario.NombreCompleto, correo = usuario.Correo, rol = usuario.Rol });
+        }
+
+        private async Task<Usuario?> UsuarioActual()
+        {
+            var idTexto = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!int.TryParse(idTexto, out var id)) return null;
+            var usuario = await _context.Usuarios.FindAsync(id);
+            return usuario is { Estado: "Activo" } ? usuario : null;
+        }
+
+        [AllowAnonymous]
         [HttpPost("recuperar")]
         public async Task<IActionResult> RecuperarPassword([FromBody] RecuperarDto peticion)
         {
@@ -119,6 +163,7 @@ namespace MymContratistas.Api.Controllers
             }
         }
 
+        [AllowAnonymous]
         [HttpPost("restablecer")]
         public async Task<IActionResult> RestablecerPassword([FromBody] ResetPasswordDto peticion)
         {
@@ -127,7 +172,7 @@ namespace MymContratistas.Api.Controllers
             if (usuario == null || usuario.TokenExpiracion < DateTime.UtcNow)
                 return BadRequest(new { mensaje = "El enlace de recuperación es inválido o ha expirado." });
 
-            usuario.Password = peticion.NuevaPassword;
+            usuario.PasswordHash = _hasher.HashPassword(usuario, peticion.NuevaPassword);
             usuario.TokenRecuperacion = null;
             usuario.TokenExpiracion = null;
     

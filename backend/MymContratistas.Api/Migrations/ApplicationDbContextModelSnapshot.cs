@@ -311,7 +311,7 @@ namespace MymContratistas.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("Password")
+                    b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasColumnType("text");
 
@@ -327,29 +327,10 @@ namespace MymContratistas.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Usuarios");
+                    b.HasIndex("Correo")
+                        .IsUnique();
 
-                    b.HasData(
-                        new
-                        {
-                            Id = 1,
-                            Correo = "marco.zapata@mym.pe",
-                            Estado = "Activo",
-                            IntentosFallidos = 0,
-                            NombreCompleto = "Marco Zapata",
-                            Password = "123",
-                            Rol = "Gerente de Operaciones"
-                        },
-                        new
-                        {
-                            Id = 2,
-                            Correo = "contacto@delrio.pe",
-                            Estado = "Activo",
-                            IntentosFallidos = 0,
-                            NombreCompleto = "Inversiones Del Río",
-                            Password = "123",
-                            Rol = "Cliente"
-                        });
+                    b.ToTable("Usuarios");
                 });
 
             modelBuilder.Entity("MymContratistas.Api.Models.Colaborador", b =>
