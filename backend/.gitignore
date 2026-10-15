@@ -1,0 +1,18 @@
+# .NET build output
+**/bin/
+**/obj/
+
+# Visual Studio user files
+.vs/
+*.user
+*.suo
+*.rsuser
+
+# Local configuration and uploaded documents
+**/appsettings.json
+**/appsettings.*.json
+!**/appsettings.example.json
+**/Uploads/
+.env
+.env.*
+!.env.example

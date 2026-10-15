@@ -1,0 +1,11 @@
+# Local configuration
+.env
+.env.*
+!.env.example
+
+# Generated files if a frontend build is added
+node_modules/
+dist/
+build/
+coverage/
+.vite/
