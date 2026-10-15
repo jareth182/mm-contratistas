@@ -285,6 +285,48 @@ namespace MymContratistas.Api.Migrations
                     b.ToTable("Partidas");
                 });
 
+            modelBuilder.Entity("MymContratistas.Api.Models.Rol", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Nombre")
+                        .IsUnique();
+
+                    b.ToTable("Roles");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            Nombre = "Administrador"
+                        },
+                        new
+                        {
+                            Id = 2,
+                            Nombre = "Gerente de Operaciones"
+                        },
+                        new
+                        {
+                            Id = 3,
+                            Nombre = "Supervisor de Obra"
+                        },
+                        new
+                        {
+                            Id = 4,
+                            Nombre = "Cliente"
+                        });
+                });
+
             modelBuilder.Entity("MymContratistas.Api.Models.Usuario", b =>
                 {
                     b.Property<int>("Id")
@@ -292,6 +334,10 @@ namespace MymContratistas.Api.Migrations
                         .HasColumnType("integer");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Apellidos")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<DateTime?>("BloqueoHasta")
                         .HasColumnType("timestamp with time zone");
@@ -307,7 +353,7 @@ namespace MymContratistas.Api.Migrations
                     b.Property<int>("IntentosFallidos")
                         .HasColumnType("integer");
 
-                    b.Property<string>("NombreCompleto")
+                    b.Property<string>("Nombres")
                         .IsRequired()
                         .HasColumnType("text");
 
@@ -315,9 +361,8 @@ namespace MymContratistas.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("Rol")
-                        .IsRequired()
-                        .HasColumnType("text");
+                    b.Property<int>("RolId")
+                        .HasColumnType("integer");
 
                     b.Property<DateTime?>("TokenExpiracion")
                         .HasColumnType("timestamp with time zone");
@@ -329,6 +374,8 @@ namespace MymContratistas.Api.Migrations
 
                     b.HasIndex("Correo")
                         .IsUnique();
+
+                    b.HasIndex("RolId");
 
                     b.ToTable("Usuarios");
                 });
@@ -395,6 +442,17 @@ namespace MymContratistas.Api.Migrations
                         .IsRequired();
 
                     b.Navigation("Obra");
+                });
+
+            modelBuilder.Entity("MymContratistas.Api.Models.Usuario", b =>
+                {
+                    b.HasOne("MymContratistas.Api.Models.Rol", "Rol")
+                        .WithMany()
+                        .HasForeignKey("RolId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Rol");
                 });
 
             modelBuilder.Entity("MymContratistas.Api.Models.Obra", b =>

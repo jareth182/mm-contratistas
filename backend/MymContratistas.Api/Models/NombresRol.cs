@@ -1,6 +1,6 @@
 namespace MymContratistas.Api.Models
 {
-    public static class Roles
+    public static class NombresRol
     {
         public const string Administrador = "Administrador";
         public const string Gerente = "Gerente de Operaciones";

@@ -7,8 +7,6 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using MymContratistas.Api.Services;
-using System.Security.Cryptography;
-using System.Text;
 
 namespace MymContratistas.Api.Controllers
 {
@@ -44,7 +42,7 @@ namespace MymContratistas.Api.Controllers
             {
                 token,
                 expira,
-                usuario = new { id = usuario.Id, nombreCompleto = usuario.NombreCompleto, correo = usuario.Correo, rol = usuario.Rol }
+                usuario = new { id = usuario.Id, nombreCompleto = usuario.NombreCompleto, correo = usuario.Correo, rol = usuario.Rol.Nombre }
             };
         }
 
@@ -56,7 +54,7 @@ namespace MymContratistas.Api.Controllers
             if (correo.Length == 0 || string.IsNullOrEmpty(login.Password))
                 return BadRequest(new { mensaje = "Debe ingresar su correo y contraseña." });
 
-            var usuario = await _context.Usuarios.FirstOrDefaultAsync(u => u.Correo.ToLower() == correo);
+            var usuario = await _context.Usuarios.Include(u => u.Rol).FirstOrDefaultAsync(u => u.Correo.ToLower() == correo);
 
             // Mismo mensaje si el usuario no existe o la contraseña es incorrecta
             var credencialesInvalidas = Unauthorized(new { mensaje = "Usuario o contraseña incorrectos." });
@@ -103,7 +101,7 @@ namespace MymContratistas.Api.Controllers
         {
             var usuario = await UsuarioActual();
             if (usuario == null) return Unauthorized();
-            return Ok(new { id = usuario.Id, nombreCompleto = usuario.NombreCompleto, correo = usuario.Correo, rol = usuario.Rol });
+            return Ok(new { id = usuario.Id, nombreCompleto = usuario.NombreCompleto, correo = usuario.Correo, rol = usuario.Rol.Nombre });
         }
 
         // Emite un token nuevo mientras la sesión siga activa (el usuario eligió «Continuar»)
@@ -120,16 +118,13 @@ namespace MymContratistas.Api.Controllers
         {
             var idTexto = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!int.TryParse(idTexto, out var id)) return null;
-            var usuario = await _context.Usuarios.FindAsync(id);
+            var usuario = await _context.Usuarios.Include(u => u.Rol).FirstOrDefaultAsync(u => u.Id == id);
             return usuario is { Estado: "Activo" } ? usuario : null;
         }
 
         private const string MensajeRecuperacion = "Si el correo se encuentra registrado, recibirá un enlace de recuperación en los próximos minutos.";
         private const int HorasVigenciaEnlace = 24;
         public const int LongitudMinimaPassword = 8;
-
-        private static string HashToken(string token) =>
-            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
 
         // Responde siempre lo mismo para no revelar si el correo existe
         [AllowAnonymous]
@@ -140,14 +135,11 @@ namespace MymContratistas.Api.Controllers
             if (correo.Length == 0)
                 return BadRequest(new { mensaje = "Ingrese un correo electrónico válido." });
 
-            var usuario = await _context.Usuarios.FirstOrDefaultAsync(u => u.Correo.ToLower() == correo);
+            var usuario = await _context.Usuarios.Include(u => u.Rol).FirstOrDefaultAsync(u => u.Correo.ToLower() == correo);
             if (usuario == null || usuario.Estado != "Activo")
                 return Ok(new { mensaje = MensajeRecuperacion });
 
-            var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
-                .Replace('+', '-').Replace('/', '_').TrimEnd('=');
-            usuario.TokenRecuperacion = HashToken(token);
-            usuario.TokenExpiracion = DateTime.UtcNow.AddHours(HorasVigenciaEnlace);
+            var token = EnlaceTokens.Generar(usuario, TimeSpan.FromHours(HorasVigenciaEnlace));
             await _context.SaveChangesAsync();
 
             try
@@ -177,7 +169,7 @@ namespace MymContratistas.Api.Controllers
         private Task<Usuario?> UsuarioPorToken(string? token)
         {
             if (string.IsNullOrWhiteSpace(token)) return Task.FromResult<Usuario?>(null);
-            var hash = HashToken(token);
+            var hash = EnlaceTokens.Hash(token);
             return _context.Usuarios.FirstOrDefaultAsync(u => u.TokenRecuperacion == hash && u.TokenExpiracion > DateTime.UtcNow);
         }
 

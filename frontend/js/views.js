@@ -162,21 +162,42 @@ V.tablero=()=>`${navbar()}${crumbs([['Tablero']])}
    <tr><td class="hint">07/09</td><td>Comentario del cliente en el hito <b>Estructura</b></td></tr>
   </tbody></table></div></div>`;
 
-V.usuarios=()=>`${navbar()}${crumbs([['Usuarios']])}
+V.usuarios=async()=>{
+  let filas='',roles=[];
+  try{
+    const [ru,rr]=await Promise.all([apiFetch(`${API}/api/usuarios`),apiFetch(`${API}/api/usuarios/roles`)]);
+    if(!ru.ok||!rr.ok) throw new Error();
+    ST.usuariosCache=await ru.json(); roles=await rr.json();
+    filas=ST.usuariosCache.map(u=>`<tr>
+     <td><b>${esc(u.nombreCompleto)}</b></td><td>${esc(u.correo)}</td><td>${esc(u.rol)}</td>
+     <td>${u.estado==='Activo'?'<span class="tg ok">Activo</span>':'<span class="tg mt">Inactivo</span>'}</td>
+     <td style="width:170px;white-space:nowrap"><button class="btn link" onclick="editarUsuario(${u.id})">Editar</button> ·
+      ${u.estado==='Activo'?`<button class="btn link" onclick="cambiarEstadoUsuario(${u.id},false)">Desactivar</button>`
+        :`<button class="btn link" onclick="cambiarEstadoUsuario(${u.id},true)">Activar</button>`}</td></tr>`).join('')
+      || '<tr><td colspan="5" style="text-align:center;color:var(--concrete)">No hay usuarios registrados.</td></tr>';
+  }catch(e){
+    filas='<tr><td colspan="5" style="text-align:center;color:var(--rust)">Error al cargar los usuarios desde el servidor.</td></tr>';
+  }
+  const f=ST.formUsuario;
+  const form=f?`<div class="card" style="margin-top:20px" id="form_usuario"><div class="ch"><h4>${f.id?'Editar usuario':'Nuevo usuario'}</h4></div><div class="cb">
+    <div class="g2"><div class="f"><label>Nombres</label><input id="usu_nombres" value="${esc(f.nombres)}"></div>
+     <div class="f"><label>Apellidos</label><input id="usu_apellidos" value="${esc(f.apellidos)}"></div></div>
+    <div class="g2"><div class="f"><label>Correo electrónico</label><input id="usu_correo" type="email" value="${esc(f.correo)}" ${f.id?'disabled':''} placeholder="nombre@correo.com">
+      ${f.id?'':'<div class="hint" style="margin-top:4px">Se enviará un enlace a este correo para que defina su contraseña.</div>'}</div>
+     <div class="f"><label>Rol</label><select id="usu_rol"><option value="">Seleccione un rol</option>
+      ${roles.map(r=>`<option value="${r.id}" ${String(f.rolId)===String(r.id)?'selected':''}>${esc(r.nombre)}</option>`).join('')}</select></div></div>
+    <button class="btn" onclick="guardarUsuario()">${f.id?'Guardar cambios':'Registrar usuario'}</button>
+    <button class="btn ghost" style="margin-left:8px" onclick="cancelarUsuario()">Cancelar</button>
+   </div></div>`:'';
+  return `${navbar()}${crumbs([['Usuarios']])}
  <div class="page"><div class="phead"><div><h1>Usuarios</h1><p>Cuentas con acceso a la plataforma y el rol que define qué puede ver cada una.</p></div>
-  <button class="btn" onclick="say('ok','Usuario registrado correctamente. Se envió el enlace para definir la contraseña.')">Nuevo usuario</button></div>
+  <button class="btn" onclick="abrirFormularioUsuario()">Nuevo usuario</button></div>
   ${ST.hu?'<div class="cota"><span class="t"></span><span class="b"></span><span class="r"></span><span class="hu">HU04</span></div>':''}
   ${ST.msg||''}
   <div class="card"><table><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th><th></th></tr></thead><tbody>
-  ${[['Maribel Minaya Arellano','maribel.minaya@mym.pe','Administrador','Activo'],
-     ['Marco Zapata Neyra','marco.zapata@mym.pe','Gerente de Operaciones','Activo'],
-     ['Rómulo Ccahuana Ayala','romulo.ccahuana@mym.pe','Supervisor de Obra','Activo'],
-     ['Inversiones Del Río S.A.C.','contacto@delrio.pe','Cliente','Activo'],
-     ['Jazmín Zapata Minaya','jazmin.zapata@mym.pe','Administrador','Inactivo']].map(u=>`<tr>
-   <td><b>${u[0]}</b></td><td>${u[1]}</td><td>${u[2]}</td>
-   <td>${u[3]==='Activo'?'<span class="tg ok">Activo</span>':'<span class="tg mt">Inactivo</span>'}</td>
-   <td style="width:150px;white-space:nowrap"><button class="btn link">Editar</button> · <button class="btn link">Desactivar</button></td></tr>`).join('')}
-  </tbody></table></div></div>`;
+  ${filas}
+  </tbody></table></div>${form}</div>`;
+};
 
 V.portafolio=()=>`${navbar()}${crumbs([['Sitio web'],['Portafolio']])}
  <div class="page"><div class="phead"><div><h1>Portafolio</h1><p>Obras que se muestran en el sitio público. Solo las publicadas son visibles para los visitantes.</p></div>

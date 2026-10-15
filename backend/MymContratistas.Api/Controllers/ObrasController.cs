@@ -8,7 +8,7 @@ namespace MymContratistas.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize(Roles = Roles.Personal)]
+    [Authorize(Roles = NombresRol.Personal)]
     public class ObrasController : ControllerBase
     {
         private readonly ApplicationDbContext _context;

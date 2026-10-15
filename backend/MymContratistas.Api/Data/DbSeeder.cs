@@ -12,10 +12,10 @@ namespace MymContratistas.Api.Data
 
             var iniciales = new[]
             {
-                new Usuario { NombreCompleto = "Maribel Minaya Arellano", Correo = "maribel.minaya@mym.pe", Rol = Roles.Administrador },
-                new Usuario { NombreCompleto = "Marco Zapata Neyra", Correo = "marco.zapata@mym.pe", Rol = Roles.Gerente },
-                new Usuario { NombreCompleto = "Rómulo Ccahuana Ayala", Correo = "romulo.ccahuana@mym.pe", Rol = Roles.Supervisor },
-                new Usuario { NombreCompleto = "Inversiones Del Río S.A.C.", Correo = "contacto@delrio.pe", Rol = Roles.Cliente }
+                new Usuario { Nombres = "Maribel", Apellidos = "Minaya Arellano", Correo = "maribel.minaya@mym.pe", RolId = 1 },
+                new Usuario { Nombres = "Marco", Apellidos = "Zapata Neyra", Correo = "marco.zapata@mym.pe", RolId = 2 },
+                new Usuario { Nombres = "Rómulo", Apellidos = "Ccahuana Ayala", Correo = "romulo.ccahuana@mym.pe", RolId = 3 },
+                new Usuario { Nombres = "Inversiones Del Río", Apellidos = "S.A.C.", Correo = "contacto@delrio.pe", RolId = 4 }
             };
 
             foreach (var u in iniciales)

@@ -63,3 +63,8 @@ async function descargarArchivo(url, nombreSugerido) {
     say('bad', 'Error de conexión con el servidor.');
   }
 }
+
+// Escapa texto que viene del servidor antes de insertarlo en el HTML
+function esc(texto) {
+  return String(texto ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}

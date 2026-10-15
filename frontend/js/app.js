@@ -3,7 +3,7 @@ ST.usuario = (sesionLeer() || {}).usuario || null;
 ST.perfil = ST.usuario ? (ST.usuario.rol === 'Cliente' ? 'cli' : 'adm') : 'pub';
 
 /* ================= control ================= */
-function go(v){ST.v=v;ST.msg=null;ST.menu=null;ST.nav=false;draw();window.scrollTo({top:0})}
+function go(v){ST.formUsuario=null;ST.v=v;ST.msg=null;ST.menu=null;ST.nav=false;draw();window.scrollTo({top:0})}
 function tab(t){ST.tab=t;ST.msg=null;draw()}
 function tog(m,e){e.stopPropagation();ST.menu=ST.menu===m?null:m;draw()}
 function say(t,x){ST.msg=`<div class="msg ${t}">${x}</div>`;draw();
@@ -787,6 +787,84 @@ async function guardarNuevaContrasena() {
     } else {
       say('bad', data.mensaje);
     }
+  } catch (e) {
+    say('bad', 'Error de conexión con el servidor.');
+  }
+}
+
+// --- USUARIOS Y ROLES (HU-04) ---
+
+function abrirFormularioUsuario() {
+  ST.formUsuario = { id: null, nombres: '', apellidos: '', correo: '', rolId: '' };
+  ST.msg = null;
+  draw();
+  setTimeout(() => { const f = document.getElementById('form_usuario'); if (f) f.scrollIntoView({ behavior: 'smooth' }); }, 50);
+}
+
+function editarUsuario(id) {
+  const u = (ST.usuariosCache || []).find(x => x.id === id);
+  if (!u) return;
+  ST.formUsuario = { id: u.id, nombres: u.nombres, apellidos: u.apellidos, correo: u.correo, rolId: u.rolId };
+  ST.msg = null;
+  draw();
+  setTimeout(() => { const f = document.getElementById('form_usuario'); if (f) f.scrollIntoView({ behavior: 'smooth' }); }, 50);
+}
+
+function cancelarUsuario() {
+  ST.formUsuario = null;
+  ST.msg = null;
+  draw();
+}
+
+async function guardarUsuario() {
+  const f = ST.formUsuario;
+  // Se conserva lo escrito por si hay que volver a mostrar el formulario con un error
+  f.nombres = document.getElementById('usu_nombres').value.trim();
+  f.apellidos = document.getElementById('usu_apellidos').value.trim();
+  f.correo = document.getElementById('usu_correo').value.trim();
+  f.rolId = document.getElementById('usu_rol').value;
+
+  if (!f.nombres) return say('bad', 'Los nombres son obligatorios.');
+  if (!f.id && (!f.correo || !f.correo.includes('@'))) return say('bad', 'Ingrese un correo electrónico válido.');
+  if (!f.rolId) return say('bad', 'Seleccione un rol para el usuario.');
+
+  try {
+    const respuesta = await apiFetch(f.id ? `${API}/api/usuarios/${f.id}` : `${API}/api/usuarios`, {
+      method: f.id ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombres: f.nombres, apellidos: f.apellidos, correo: f.correo, rolId: parseInt(f.rolId) })
+    });
+    const data = await respuesta.json();
+    if (respuesta.ok) {
+      // Si el administrador cambió su propio nombre, se actualiza la barra superior
+      if (f.id && ST.usuario && f.id === ST.usuario.id) {
+        ST.usuario.nombreCompleto = data.usuario.nombreCompleto;
+        const sesion = sesionLeer();
+        if (sesion) sesionGuardar({ ...sesion, usuario: ST.usuario });
+      }
+      ST.formUsuario = null;
+      say(data.correoEnviado === false ? 'warn' : 'ok', data.mensaje);
+    } else if (respuesta.status !== 401) {
+      say('bad', data.mensaje || 'No se pudo guardar el usuario.');
+    }
+  } catch (e) {
+    say('bad', 'Error de conexión con el servidor.');
+  }
+}
+
+async function cambiarEstadoUsuario(id, activar) {
+  const u = (ST.usuariosCache || []).find(x => x.id === id);
+  if (!activar && !confirm(`¿Desactivar a ${u ? u.nombreCompleto : 'este usuario'}? No podrá ingresar, pero se conservarán sus registros.`)) return;
+
+  try {
+    const respuesta = await apiFetch(`${API}/api/usuarios/${id}/estado`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ activo: activar })
+    });
+    const data = await respuesta.json();
+    if (respuesta.ok) say('ok', data.mensaje);
+    else if (respuesta.status !== 401) say('bad', data.mensaje || 'No se pudo cambiar el estado.');
   } catch (e) {
     say('bad', 'Error de conexión con el servidor.');
   }

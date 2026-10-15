@@ -1,4 +1,4 @@
-using System.Text;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -44,6 +44,21 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = TokenService.ObtenerClave(builder.Configuration),
             ClockSkew = TimeSpan.Zero
+        };
+
+        // Un usuario desactivado pierde el acceso aunque su token no haya vencido
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = async contexto =>
+            {
+                var idTexto = contexto.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
+                var db = contexto.HttpContext.RequestServices.GetRequiredService<ApplicationDbContext>();
+                var rolToken = contexto.Principal?.FindFirstValue(ClaimTypes.Role);
+                var vigente = int.TryParse(idTexto, out var id)
+                    && await db.Usuarios.AnyAsync(u => u.Id == id && u.Estado == "Activo" && u.Rol.Nombre == rolToken);
+                // Si el usuario se desactivó o cambió de rol, debe iniciar sesión de nuevo
+                if (!vigente) contexto.Fail("Usuario inactivo, inexistente o con rol modificado.");
+            }
         };
     });
 builder.Services.AddAuthorization();

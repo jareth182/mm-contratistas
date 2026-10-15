@@ -33,7 +33,7 @@ namespace MymContratistas.Api.Services
                 new Claim(ClaimTypes.NameIdentifier, usuario.Id.ToString()),
                 new Claim(ClaimTypes.Name, usuario.NombreCompleto),
                 new Claim(ClaimTypes.Email, usuario.Correo),
-                new Claim(ClaimTypes.Role, usuario.Rol)
+                new Claim(ClaimTypes.Role, usuario.Rol.Nombre)
             };
 
             var credenciales = new SigningCredentials(ObtenerClave(_config), SecurityAlgorithms.HmacSha256);
