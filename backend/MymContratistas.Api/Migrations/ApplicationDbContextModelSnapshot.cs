@@ -451,6 +451,42 @@ namespace MymContratistas.Api.Migrations
                         });
                 });
 
+            modelBuilder.Entity("MymContratistas.Api.Models.Servicio", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Beneficios")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Caracteristicas")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Descripcion")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Servicios");
+                });
+
             modelBuilder.Entity("MymContratistas.Api.Models.Usuario", b =>
                 {
                     b.Property<int>("Id")

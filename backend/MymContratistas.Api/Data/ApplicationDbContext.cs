@@ -19,6 +19,7 @@ namespace MymContratistas.Api.Data // <-- Aquí estaba el detalle
         public DbSet<ProyectoPortafolio> Portafolio { get; set; }
         public DbSet<ImagenProyecto> ImagenesPortafolio { get; set; }
         public DbSet<Cliente> Clientes { get; set; }
+        public DbSet<Servicio> Servicios { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

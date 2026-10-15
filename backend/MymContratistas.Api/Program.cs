@@ -74,6 +74,7 @@ using (var scope = app.Services.CreateScope())
     var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher<Usuario>>();
     DbSeeder.SembrarUsuarios(context, hasher, builder.Configuration["Seed:Password"]);
+    DbSeeder.SembrarServicios(context);
 }
 
 if (app.Environment.IsDevelopment())

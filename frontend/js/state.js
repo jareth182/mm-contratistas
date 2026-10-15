@@ -37,10 +37,6 @@ const PROY=[{n:'Edificio multifamiliar Los Cedros',c:'Inversiones Del Río S.A.C
  {n:'Remodelación oficinas Miraflores',c:'Estudio Vargas & Asoc.',e:'En Ejecución',a:78},
  {n:'Ampliación almacén Lurín',c:'Comercial Pacífico E.I.R.L.',e:'En Ejecución',a:12},
  {n:'Casa de playa Asia',c:'Familia Benavides',e:'Finalizado',a:100}];
-const SERV=[{n:'Construcción de edificios',d:'Ejecución integral de edificaciones multifamiliares y comerciales, desde la cimentación hasta los acabados.'},
- {n:'Remodelación y acabados',d:'Renovación de interiores, tabiquería, pisos, pintura y carpintería para viviendas y oficinas.'},
- {n:'Obras civiles menores',d:'Ampliaciones, cercos perimétricos, losas y trabajos puntuales de albañilería.'},
- {n:'Supervisión de obra',d:'Coordinación con el ingeniero residente y control del cumplimiento de plazos y seguridad.'}];
 
 /* ================= estado ================= */
 let ST={v:'home',tab:'hitos',perfil:'pub',hu:false,menu:null,nav:false,msg:null};

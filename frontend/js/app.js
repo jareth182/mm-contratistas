@@ -3,7 +3,7 @@ ST.usuario = (sesionLeer() || {}).usuario || null;
 ST.perfil = ST.usuario ? (ST.usuario.rol === 'Cliente' ? 'cli' : 'adm') : 'pub';
 
 /* ================= control ================= */
-function go(v){ST.formUsuario=null;ST.formHito=null;ST.formProyecto=null;ST.formObra=null;ST.finalizando=false;ST.v=v;ST.msg=null;ST.menu=null;ST.nav=false;draw();window.scrollTo({top:0})}
+function go(v){ST.formUsuario=null;ST.formServicio=null;ST.formHito=null;ST.formProyecto=null;ST.formObra=null;ST.finalizando=false;ST.v=v;ST.msg=null;ST.menu=null;ST.nav=false;draw();window.scrollTo({top:0})}
 function abrirObra(id){ST.obraId=id;ST.formHito=null;ST.hitoEditando=null;ST.tab='hitos';go('obra')}
 function tab(t){ST.tab=t;ST.msg=null;draw()}
 function tog(m,e){e.stopPropagation();ST.menu=ST.menu===m?null:m;draw()}
@@ -1255,6 +1255,115 @@ function teclaGaleria(e) {
   else if (e.key === 'ArrowRight') moverGaleria(1);
 }
 
+// --- CATÁLOGO DE SERVICIOS (HU-09) ---
+
+// Catálogo publicado: lo usan el pie de página, la página de servicios y la cotización
+async function cargarServiciosPublicos() {
+  try {
+    const r = await fetch(`${API}/api/sitio/servicios`);
+    ST.servicios = r.ok ? await r.json() : [];
+  } catch (e) {
+    ST.servicios = [];
+  }
+}
+
+function nuevoServicio() {
+  const siguiente = (ST.serviciosAdmCache || []).length + 1;
+  ST.formServicio = { id: null, nombre: '', descripcion: '', beneficios: '', caracteristicas: '', orden: siguiente, estado: 'Publicado' };
+  ST.msg = null;
+  draw();
+  setTimeout(() => { const f = document.getElementById('form_servicio'); if (f) f.scrollIntoView({ behavior: 'smooth' }); }, 50);
+}
+
+function editarServicio(id) {
+  const s = (ST.serviciosAdmCache || []).find(x => x.id === id);
+  if (!s) return;
+  ST.formServicio = { ...s };
+  ST.msg = null;
+  draw();
+  setTimeout(() => { const f = document.getElementById('form_servicio'); if (f) f.scrollIntoView({ behavior: 'smooth' }); }, 50);
+}
+
+function cancelarServicio() {
+  ST.formServicio = null;
+  ST.msg = null;
+  draw();
+}
+
+async function guardarServicio() {
+  const f = ST.formServicio;
+  // Se conserva lo escrito por si hay que volver a mostrar el formulario con un error
+  f.nombre = document.getElementById('srv_nombre').value.trim();
+  f.orden = document.getElementById('srv_orden').value;
+  f.estado = document.getElementById('srv_estado').value;
+  f.descripcion = document.getElementById('srv_descripcion').value.trim();
+  f.beneficios = document.getElementById('srv_beneficios').value;
+  f.caracteristicas = document.getElementById('srv_caracteristicas').value;
+
+  if (!f.nombre) return say('bad', 'El nombre del servicio es obligatorio.');
+  if (!f.descripcion) return say('bad', 'La descripción breve es obligatoria.');
+  if (!(parseInt(f.orden) >= 1)) return say('bad', 'El orden debe ser 1 o mayor.');
+
+  try {
+    const respuesta = await apiFetch(f.id ? `${API}/api/servicios/${f.id}` : `${API}/api/servicios`, {
+      method: f.id ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre: f.nombre, descripcion: f.descripcion, beneficios: f.beneficios, caracteristicas: f.caracteristicas, orden: parseInt(f.orden), estado: f.estado })
+    });
+    const data = await respuesta.json();
+    if (respuesta.ok) {
+      ST.formServicio = null;
+      await cargarServiciosPublicos();
+      say('ok', data.mensaje);
+    } else if (respuesta.status !== 401) {
+      say('bad', data.mensaje || 'No se pudo guardar el servicio.');
+    }
+  } catch (e) {
+    say('bad', 'Error de conexión con el servidor.');
+  }
+}
+
+// Ventana de confirmación propia (no el confirm del navegador) antes de eliminar
+function confirmarEliminarServicio(id) {
+  const s = (ST.serviciosAdmCache || []).find(x => x.id === id);
+  if (!s) return;
+  let capa = document.getElementById('modal_eliminar_servicio');
+  if (!capa) {
+    capa = document.createElement('div');
+    capa.id = 'modal_eliminar_servicio';
+    document.body.appendChild(capa);
+  }
+  capa.style.cssText = 'position:fixed;inset:0;background:rgba(10,25,41,.6);display:flex;align-items:center;justify-content:center;z-index:900';
+  capa.innerHTML = `<div class="card" style="max-width:420px;width:92%" role="alertdialog" aria-modal="true"><div class="cb">
+    <h3 style="margin-bottom:8px">Eliminar servicio</h3>
+    <p>¿Eliminar <b>${esc(s.nombre)}</b> del catálogo? Dejará de mostrarse en el sitio público. Esta acción no se puede deshacer.</p>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn" style="background:var(--rust);border-color:var(--rust)" onclick="eliminarServicio(${s.id})">Eliminar</button>
+      <button class="btn ghost" onclick="cerrarConfirmacionServicio()">Cancelar</button></div></div></div>`;
+}
+
+function cerrarConfirmacionServicio() {
+  const capa = document.getElementById('modal_eliminar_servicio');
+  if (capa) capa.remove();
+}
+
+async function eliminarServicio(id) {
+  cerrarConfirmacionServicio();
+  try {
+    const respuesta = await apiFetch(`${API}/api/servicios/${id}`, { method: 'DELETE' });
+    const data = await respuesta.json();
+    if (respuesta.ok) {
+      if (ST.formServicio && ST.formServicio.id === id) ST.formServicio = null;
+      await cargarServiciosPublicos();
+      say('ok', data.mensaje);
+    } else if (respuesta.status !== 401) {
+      say('bad', data.mensaje || 'No se pudo eliminar el servicio.');
+    }
+  } catch (e) {
+    say('bad', 'Error de conexión con el servidor.');
+  }
+}
+
 // --- ARRANQUE ---
 
 document.addEventListener('click',()=>{if(ST.menu){ST.menu=null;draw()}});
@@ -1269,5 +1378,5 @@ if (h.includes('?')) {
 
 if (h && V[h]) ST.v = h;
 
-// Arrancar la plataforma
-draw();
+// Arrancar la plataforma (el catálogo se carga antes porque lo usa el pie de página)
+cargarServiciosPublicos().finally(draw);
