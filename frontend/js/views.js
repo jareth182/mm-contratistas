@@ -9,7 +9,7 @@ V.home=()=>`${navbar()}
    <button class="btn warn" onclick="go('cotizar')">Solicitar cotización</button>
    <button class="btn ghost" style="color:#fff;border-color:#4A6072;margin-left:8px" onclick="go('servicios')">Ver servicios</button>
  </div></section>
- <div class="page">${cota('Proyectos ejecutados','HU05')}
+ <div class="page">${ST.msg||''}${cota('Proyectos ejecutados','HU05')}
   <div class="cards">${PORT.filter(p=>p.e==='Publicado').map(p=>`<article class="pc2">
     <div class="im">Fotografía de obra</div><div class="bd"><h3>${p.n}</h3>
     <div class="hint" style="margin:3px 0 10px">${p.t} · ${p.u} · ${p.a}</div>
@@ -110,6 +110,15 @@ V.nueva_password=()=>`${navbar()}
    <div class="f"><label>Confirmar Contraseña</label><input type="password" id="reset_pass2"></div>
    <button class="btn" style="width:100%" onclick="guardarNuevaContrasena()">Guardar</button>
   </div></div></div>${pie()}`;
+
+V.perfil=()=>`${navbar()}${crumbs([['Mi perfil']])}
+ <div class="page" style="max-width:560px"><div class="phead"><div><h1>Mi perfil</h1>
+  <p>Datos de la cuenta con la que inició sesión.</p></div></div>
+  ${ST.msg||''}
+  <div class="card"><table><tbody>
+   <tr><th style="width:40%">Nombre completo</th><td>${ST.usuario.nombreCompleto}</td></tr>
+   <tr><th>Correo electrónico</th><td>${ST.usuario.correo}</td></tr>
+   <tr><th>Rol</th><td>${ST.usuario.rol}</td></tr></tbody></table></div></div>${pie()}`;
 
 /* ---- admin ---- */
 V.tablero=()=>`${navbar()}${crumbs([['Tablero']])}

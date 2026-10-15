@@ -52,7 +52,7 @@ function userMenu(ini,nom,rol,alert){
       <span class="av">${ini}</span><span class="un"><b>${nom}</b><span>${rol}</span></span><span style="color:#8FA3B2">▾</span></button>
       ${ST.menu==='usr'?`<div class="dd">
         <div class="dh"><span>Sesión activa</span></div>
-        <button class="item">Mi perfil<span class="sub">${nom} · ${rol}</span></button>
+        <button class="item" onclick="go('perfil')">Mi perfil<span class="sub">${nom} · ${rol}</span></button>
         <button class="item" onclick="ST.hu=!ST.hu;ST.menu=null;draw()">${ST.hu?'Ocultar':'Mostrar'} códigos de historia<span class="sub">Trazabilidad con el backlog</span></button>
         <button class="item" onclick="cerrarSesion()" style="color:var(--rust)">Cerrar sesión</button>
       </div>`:''}</span>`;

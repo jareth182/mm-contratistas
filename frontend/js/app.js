@@ -614,24 +614,104 @@ function exportarControlEconomico() {
 
 // --- AUTENTICACIÓN (HU-01 y HU-03) ---
 
-function cerrarSesion() {
+function cerrarSesion(mensaje) {
   sesionBorrar();
   ST.usuario = null;
   ST.menu = null;
-  ST.msg = null;
-  go('home');
+  ocultarAvisoInactividad();
+  ST.v = 'home';
+  ST.msg = `<div class="msg ok">${mensaje || 'Sesión cerrada correctamente.'}</div>`;
+  draw();
+  window.scrollTo({ top: 0 });
 }
 
-// El servidor rechazó el token (venció o la cuenta fue desactivada)
-function sesionExpirada() {
+// El servidor rechazó el token o se agotó el tiempo: vuelve al inicio de sesión
+function sesionExpirada(mensaje) {
   if (!ST.usuario) return;
   sesionBorrar();
   ST.usuario = null;
   ST.menu = null;
+  ocultarAvisoInactividad();
   ST.v = 'login';
-  ST.msg = '<div class="msg warn">Su sesión expiró. Inicie sesión nuevamente.</div>';
+  ST.msg = `<div class="msg warn">${mensaje || 'Su sesión expiró. Inicie sesión nuevamente.'}</div>`;
   draw();
 }
+
+// --- CONTROL DE INACTIVIDAD (HU-02) ---
+// Aviso a los 25 min sin actividad y cierre automático a los 30 min
+const INACTIVIDAD = { avisoMs: 25 * 60 * 1000, cierreMs: 30 * 60 * 1000, renovarCadaMs: 10 * 60 * 1000 };
+let ultimaActividad = Date.now();
+let ultimaRenovacion = Date.now();
+let avisoVisible = false;
+
+function registrarActividad() {
+  if (!ST.usuario || avisoVisible) return; // con el aviso abierto solo cuentan sus botones
+  ultimaActividad = Date.now();
+  if (ultimaActividad - ultimaRenovacion > INACTIVIDAD.renovarCadaMs) renovarSesion();
+}
+
+async function renovarSesion() {
+  ultimaRenovacion = Date.now(); // evita llamadas repetidas mientras responde
+  try {
+    const respuesta = await apiFetch(API + '/api/auth/renovar', { method: 'POST' });
+    if (!respuesta.ok) return;
+    const data = await respuesta.json();
+    sesionGuardar({ token: data.token, expira: data.expira, usuario: data.usuario });
+    return true;
+  } catch (e) { /* sin conexión: se reintentará con la siguiente actividad */ }
+}
+
+function mostrarAvisoInactividad() {
+  avisoVisible = true;
+  let capa = document.getElementById('aviso_inactividad');
+  if (!capa) {
+    capa = document.createElement('div');
+    capa.id = 'aviso_inactividad';
+    document.body.appendChild(capa);
+  }
+  capa.style.cssText = 'position:fixed;inset:0;background:rgba(10,25,41,.6);display:flex;align-items:center;justify-content:center;z-index:1000';
+  capa.innerHTML = `<div class="card" style="max-width:400px;width:90%"><div class="cb">
+    <h3 style="margin-bottom:8px">¿Sigue ahí?</h3>
+    <p>Su sesión se cerrará por inactividad en <b id="aviso_segundos"></b>.</p>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn" onclick="continuarSesion()">Continuar</button>
+      <button class="btn ghost" onclick="cerrarSesion()">Cerrar sesión</button></div></div></div>`;
+  actualizarCuentaRegresiva();
+}
+
+function actualizarCuentaRegresiva() {
+  const el = document.getElementById('aviso_segundos');
+  if (!el) return;
+  const restante = Math.max(0, Math.ceil((INACTIVIDAD.cierreMs - (Date.now() - ultimaActividad)) / 1000));
+  el.textContent = `${Math.floor(restante / 60)}:${String(restante % 60).padStart(2, '0')}`;
+}
+
+function ocultarAvisoInactividad() {
+  avisoVisible = false;
+  const capa = document.getElementById('aviso_inactividad');
+  if (capa) capa.style.display = 'none';
+}
+
+async function continuarSesion() {
+  const renovada = await renovarSesion();
+  if (!renovada) return sesionExpirada('Su sesión expiró por inactividad. Inicie sesión nuevamente.');
+  ocultarAvisoInactividad();
+  ultimaActividad = Date.now();
+}
+
+function revisarInactividad() {
+  if (!ST.usuario) { if (avisoVisible) ocultarAvisoInactividad(); return; }
+  const inactivo = Date.now() - ultimaActividad;
+  if (inactivo >= INACTIVIDAD.cierreMs) {
+    sesionExpirada('Su sesión se cerró por inactividad. Inicie sesión nuevamente.');
+  } else if (inactivo >= INACTIVIDAD.avisoMs) {
+    if (!avisoVisible) mostrarAvisoInactividad(); else actualizarCuentaRegresiva();
+  }
+}
+
+['click', 'keydown', 'mousemove', 'scroll', 'touchstart'].forEach(ev =>
+  document.addEventListener(ev, registrarActividad, { passive: true }));
+setInterval(revisarInactividad, 1000);
 
 async function iniciarSesion() {
   const correo = document.getElementById('login_correo').value;
@@ -655,6 +735,7 @@ async function iniciarSesion() {
       sesionGuardar({ token: data.token, expira: data.expira, usuario: data.usuario });
       ST.usuario = data.usuario;
       ST.msg = null;
+      ultimaActividad = ultimaRenovacion = Date.now();
       go(vistaInicio(data.usuario.rol));
     } else {
       say('bad', data.mensaje);

@@ -98,6 +98,16 @@ namespace MymContratistas.Api.Controllers
             return Ok(new { id = usuario.Id, nombreCompleto = usuario.NombreCompleto, correo = usuario.Correo, rol = usuario.Rol });
         }
 
+        // Emite un token nuevo mientras la sesión siga activa (el usuario eligió «Continuar»)
+        [Authorize]
+        [HttpPost("renovar")]
+        public async Task<IActionResult> Renovar()
+        {
+            var usuario = await UsuarioActual();
+            if (usuario == null) return Unauthorized(new { mensaje = "La sesión ya no es válida." });
+            return Ok(RespuestaSesion(usuario));
+        }
+
         private async Task<Usuario?> UsuarioActual()
         {
             var idTexto = User.FindFirstValue(ClaimTypes.NameIdentifier);
