@@ -1,20 +1,34 @@
-// Solo actualizamos la variable ST que ya viene de views.js
-ST.usuario = null;
-ST.perfil = 'pub';
+// Sesión restaurada desde el almacenamiento (si el usuario recarga la página)
+ST.usuario = (sesionLeer() || {}).usuario || null;
+ST.perfil = ST.usuario ? (ST.usuario.rol === 'Cliente' ? 'cli' : 'adm') : 'pub';
 
-// Si no hay una vista definida al cargar, lo mandamos al login (o home)
-if (!ST.v) {
-  ST.v = 'login'; 
-}
 /* ================= control ================= */
-function go(v){ST.v=v;ST.msg=null;ST.menu=null;ST.nav=false;draw();window.scrollTo({top:0})}
+function go(v){ST.formUsuario=null;ST.v=v;ST.msg=null;ST.menu=null;ST.nav=false;draw();window.scrollTo({top:0})}
 function tab(t){ST.tab=t;ST.msg=null;draw()}
-function perfil(p,v){ST.perfil=p;ST.v=v;ST.menu=null;ST.msg=null;draw();window.scrollTo({top:0})}
 function tog(m,e){e.stopPropagation();ST.menu=ST.menu===m?null:m;draw()}
 function say(t,x){ST.msg=`<div class="msg ${t}">${x}</div>`;draw();
   const m=document.querySelector('.msg');if(m)m.scrollIntoView({block:'center'})}
 
+// Control de acceso: vistas privadas solo con sesión y según el rol
+function guardarAcceso() {
+  const rol = ST.usuario ? ST.usuario.rol : null;
+  ST.perfil = rol ? (rol === 'Cliente' ? 'cli' : 'adm') : 'pub';
+
+  if (VISTAS_PRIVADAS.includes(ST.v)) {
+    if (!rol) {
+      ST.v = 'login';
+      if (!ST.msg) ST.msg = '<div class="msg warn">Inicie sesión para continuar.</div>';
+    } else if (!puedeVer(rol, ST.v)) {
+      ST.v = vistaInicio(rol);
+      ST.msg = '<div class="msg bad">No tiene permisos para acceder a esa sección.</div>';
+    }
+  } else if (rol && ST.v === 'login') {
+    ST.v = vistaInicio(rol);
+  }
+}
+
 async function draw(){
+  guardarAcceso();
   const vista = V[ST.v] || V.home;
   document.getElementById('app').innerHTML = await vista();
   location.hash = ST.v;
@@ -39,7 +53,7 @@ async function guardarObra() {
   };
 
   try {
-    const respuesta = await fetch('http://localhost:5067/api/obras', {
+    const respuesta = await apiFetch(API + '/api/obras', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -86,7 +100,7 @@ async function guardarHito(obraId) {
   };
 
   try {
-    const respuesta = await fetch(`http://localhost:5067/api/obras/${obraId}/hitos`, {
+    const respuesta = await apiFetch(`${API}/api/obras/${obraId}/hitos`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -136,7 +150,7 @@ async function actualizarAvanceDesdeFormulario(hitoId) {
   }
 
   try {
-    const respuesta = await fetch(`http://localhost:5067/api/obras/hitos/${hitoId}`, {
+    const respuesta = await apiFetch(`${API}/api/obras/hitos/${hitoId}`, {
       method: 'PUT',
       body: formData 
     });
@@ -179,7 +193,7 @@ async function asignarColaborador(obraId) {
   };
 
   try {
-    const respuesta = await fetch(`http://localhost:5067/api/obras/${obraId}/cuadrilla`, {
+    const respuesta = await apiFetch(`${API}/api/obras/${obraId}/cuadrilla`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(nuevoColaborador)
@@ -200,7 +214,7 @@ async function retirarColaborador(colabId) {
   if (!confirm("¿Está seguro de registrar la salida de este colaborador?")) return;
 
   try {
-    const respuesta = await fetch(`http://localhost:5067/api/obras/cuadrilla/${colabId}`, {
+    const respuesta = await apiFetch(`${API}/api/obras/cuadrilla/${colabId}`, {
       method: 'DELETE'
     });
 
@@ -233,7 +247,7 @@ async function subirDocumento(obraId) {
   formData.append("visibleCliente", visible);
 
   try {
-    const respuesta = await fetch(`http://localhost:5067/api/obras/${obraId}/documentos`, {
+    const respuesta = await apiFetch(`${API}/api/obras/${obraId}/documentos`, {
       method: 'POST',
       body: formData
     });
@@ -253,7 +267,7 @@ async function eliminarDocumento(docId) {
   if (!confirm("¿Está seguro de eliminar este documento de la obra?")) return;
 
   try {
-    const respuesta = await fetch(`http://localhost:5067/api/obras/documentos/${docId}`, {
+    const respuesta = await apiFetch(`${API}/api/obras/documentos/${docId}`, {
       method: 'DELETE'
     });
 
@@ -269,7 +283,7 @@ async function eliminarDocumento(docId) {
 }
 
 function descargarDocumento(docId) {
-  window.open(`http://localhost:5067/api/obras/documentos/${docId}/descargar`, '_blank');
+  descargarArchivo(`${API}/api/obras/documentos/${docId}/descargar`);
 }
 
 // --- PRESUPUESTO / PARTIDAS ---
@@ -295,7 +309,7 @@ async function agregarPartidaFormulario(obraId) {
   };
 
   try {
-    const respuesta = await fetch(`http://localhost:5067/api/obras/${obraId}/partidas`, {
+    const respuesta = await apiFetch(`${API}/api/obras/${obraId}/partidas`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(nuevaPartida)
@@ -339,7 +353,7 @@ async function actualizarPartida(partidaId) {
   };
 
   try {
-    const respuesta = await fetch(`http://localhost:5067/api/obras/partidas/${partidaId}`, {
+    const respuesta = await apiFetch(`${API}/api/obras/partidas/${partidaId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(partidaActualizada)
@@ -361,7 +375,7 @@ async function eliminarPartida(partidaId) {
   if (!confirm("¿Está seguro de eliminar esta partida del presupuesto?")) return;
 
   try {
-    const respuesta = await fetch(`http://localhost:5067/api/obras/partidas/${partidaId}`, {
+    const respuesta = await apiFetch(`${API}/api/obras/partidas/${partidaId}`, {
       method: 'DELETE'
     });
 
@@ -423,7 +437,7 @@ async function registrarGasto(obraId, requiereComprobante) {
   }
 
   try {
-    const respuesta = await fetch(`http://localhost:5067/api/obras/${obraId}/gastos`, {
+    const respuesta = await apiFetch(`${API}/api/obras/${obraId}/gastos`, {
       method: 'POST',
       body: formData
     });
@@ -440,14 +454,14 @@ async function registrarGasto(obraId, requiereComprobante) {
 }
 
 function descargarComprobante(gastoId) {
-  window.open(`http://localhost:5067/api/obras/gastos/${gastoId}/descargar`, '_blank');
+  descargarArchivo(`${API}/api/obras/gastos/${gastoId}/descargar`);
 }
 
 async function anularGasto(gastoId) {
   if (!confirm("¿Está seguro de que desea anular este gasto? El monto se devolverá al saldo de la partida.")) return;
 
   try {
-    const respuesta = await fetch(`http://localhost:5067/api/obras/gastos/${gastoId}/anular`, {
+    const respuesta = await apiFetch(`${API}/api/obras/gastos/${gastoId}/anular`, {
       method: 'PUT'
     });
 
@@ -503,7 +517,7 @@ async function registrarPago(obraId, requiereConstancia) {
   }
 
   try {
-    const respuesta = await fetch(`http://localhost:5067/api/obras/${obraId}/pagos`, {
+    const respuesta = await apiFetch(`${API}/api/obras/${obraId}/pagos`, {
       method: 'POST',
       body: formData
     });
@@ -520,7 +534,7 @@ async function registrarPago(obraId, requiereConstancia) {
 }
 
 function descargarConstancia(pagoId) {
-  window.open(`http://localhost:5067/api/obras/pagos/${pagoId}/descargar`, '_blank');
+  descargarArchivo(`${API}/api/obras/pagos/${pagoId}/descargar`);
 }
 
 function formatearPeriodo(input) {
@@ -600,6 +614,105 @@ function exportarControlEconomico() {
 
 // --- AUTENTICACIÓN (HU-01 y HU-03) ---
 
+function cerrarSesion(mensaje) {
+  sesionBorrar();
+  ST.usuario = null;
+  ST.menu = null;
+  ocultarAvisoInactividad();
+  ST.v = 'home';
+  ST.msg = `<div class="msg ok">${mensaje || 'Sesión cerrada correctamente.'}</div>`;
+  draw();
+  window.scrollTo({ top: 0 });
+}
+
+// El servidor rechazó el token o se agotó el tiempo: vuelve al inicio de sesión
+function sesionExpirada(mensaje) {
+  if (!ST.usuario) return;
+  sesionBorrar();
+  ST.usuario = null;
+  ST.menu = null;
+  ocultarAvisoInactividad();
+  ST.v = 'login';
+  ST.msg = `<div class="msg warn">${mensaje || 'Su sesión expiró. Inicie sesión nuevamente.'}</div>`;
+  draw();
+}
+
+// --- CONTROL DE INACTIVIDAD (HU-02) ---
+// Aviso a los 25 min sin actividad y cierre automático a los 30 min
+const INACTIVIDAD = { avisoMs: 25 * 60 * 1000, cierreMs: 30 * 60 * 1000, renovarCadaMs: 10 * 60 * 1000 };
+let ultimaActividad = Date.now();
+let ultimaRenovacion = Date.now();
+let avisoVisible = false;
+
+function registrarActividad() {
+  if (!ST.usuario || avisoVisible) return; // con el aviso abierto solo cuentan sus botones
+  ultimaActividad = Date.now();
+  if (ultimaActividad - ultimaRenovacion > INACTIVIDAD.renovarCadaMs) renovarSesion();
+}
+
+async function renovarSesion() {
+  ultimaRenovacion = Date.now(); // evita llamadas repetidas mientras responde
+  try {
+    const respuesta = await apiFetch(API + '/api/auth/renovar', { method: 'POST' });
+    if (!respuesta.ok) return;
+    const data = await respuesta.json();
+    sesionGuardar({ token: data.token, expira: data.expira, usuario: data.usuario });
+    return true;
+  } catch (e) { /* sin conexión: se reintentará con la siguiente actividad */ }
+}
+
+function mostrarAvisoInactividad() {
+  avisoVisible = true;
+  let capa = document.getElementById('aviso_inactividad');
+  if (!capa) {
+    capa = document.createElement('div');
+    capa.id = 'aviso_inactividad';
+    document.body.appendChild(capa);
+  }
+  capa.style.cssText = 'position:fixed;inset:0;background:rgba(10,25,41,.6);display:flex;align-items:center;justify-content:center;z-index:1000';
+  capa.innerHTML = `<div class="card" style="max-width:400px;width:90%"><div class="cb">
+    <h3 style="margin-bottom:8px">¿Sigue ahí?</h3>
+    <p>Su sesión se cerrará por inactividad en <b id="aviso_segundos"></b>.</p>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn" onclick="continuarSesion()">Continuar</button>
+      <button class="btn ghost" onclick="cerrarSesion()">Cerrar sesión</button></div></div></div>`;
+  actualizarCuentaRegresiva();
+}
+
+function actualizarCuentaRegresiva() {
+  const el = document.getElementById('aviso_segundos');
+  if (!el) return;
+  const restante = Math.max(0, Math.ceil((INACTIVIDAD.cierreMs - (Date.now() - ultimaActividad)) / 1000));
+  el.textContent = `${Math.floor(restante / 60)}:${String(restante % 60).padStart(2, '0')}`;
+}
+
+function ocultarAvisoInactividad() {
+  avisoVisible = false;
+  const capa = document.getElementById('aviso_inactividad');
+  if (capa) capa.style.display = 'none';
+}
+
+async function continuarSesion() {
+  const renovada = await renovarSesion();
+  if (!renovada) return sesionExpirada('Su sesión expiró por inactividad. Inicie sesión nuevamente.');
+  ocultarAvisoInactividad();
+  ultimaActividad = Date.now();
+}
+
+function revisarInactividad() {
+  if (!ST.usuario) { if (avisoVisible) ocultarAvisoInactividad(); return; }
+  const inactivo = Date.now() - ultimaActividad;
+  if (inactivo >= INACTIVIDAD.cierreMs) {
+    sesionExpirada('Su sesión se cerró por inactividad. Inicie sesión nuevamente.');
+  } else if (inactivo >= INACTIVIDAD.avisoMs) {
+    if (!avisoVisible) mostrarAvisoInactividad(); else actualizarCuentaRegresiva();
+  }
+}
+
+['click', 'keydown', 'mousemove', 'scroll', 'touchstart'].forEach(ev =>
+  document.addEventListener(ev, registrarActividad, { passive: true }));
+setInterval(revisarInactividad, 1000);
+
 async function iniciarSesion() {
   const correo = document.getElementById('login_correo').value;
   const password = document.getElementById('login_password').value;
@@ -610,7 +723,7 @@ async function iniciarSesion() {
   }
 
   try {
-    const respuesta = await fetch('http://localhost:5067/api/auth/login', {
+    const respuesta = await apiFetch(API + '/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ correo: correo, password: password })
@@ -619,13 +732,11 @@ async function iniciarSesion() {
     const data = await respuesta.json();
 
     if (respuesta.ok) {
-      ST.usuario = data;
-      
-      if (data.rol === 'Cliente') {
-        perfil('cli', 'c-obra');
-      } else {
-        perfil('adm', 'tablero');
-      }
+      sesionGuardar({ token: data.token, expira: data.expira, usuario: data.usuario });
+      ST.usuario = data.usuario;
+      ST.msg = null;
+      ultimaActividad = ultimaRenovacion = Date.now();
+      go(vistaInicio(data.usuario.rol));
     } else {
       say('bad', data.mensaje);
     }
@@ -635,42 +746,24 @@ async function iniciarSesion() {
 }
 
 async function enviarEnlace() {
-  const correo = document.getElementById('rec_correo').value;
-  if (!correo) return say('bad', 'Ingrese un correo electrónico válido.');
-
-  // Captura la ruta sin importar en qué computadora estés
-  const urlBase = window.location.href.split('#')[0]; 
+  const correo = document.getElementById('rec_correo').value.trim();
+  if (!correo || !correo.includes('@')) return say('bad', 'Ingrese un correo electrónico válido.');
 
   try {
-    const res = await fetch('http://localhost:5067/api/auth/recuperar', {
+    const res = await fetch(API + '/api/auth/recuperar', {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Frontend-Url': urlBase // Lo enviamos oculto por aquí para no romper C#
-      },
-      body: JSON.stringify({ correo: correo }) 
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ correo: correo })
     });
-    
     const data = await res.json();
-    if (res.ok) {
-      say('ok', data.mensaje);
-    } else {
-      say('bad', data.mensaje);
-    }
+    say(res.ok ? 'ok' : 'bad', data.mensaje);
   } catch (e) {
     say('bad', 'Error al conectar con el servidor.');
   }
 }
 
 async function guardarNuevaContrasena() {
-  // 1. Extraemos el token secreto directamente de la URL que abrió el correo
-  let token = "";
-  if (window.location.hash.includes('?token=')) {
-    token = window.location.hash.split('?token=')[1];
-  } else {
-    token = document.getElementById('reset_token')?.value; 
-  }
-
+  const token = ST.token_temp;
   const pass1 = document.getElementById('reset_pass1').value;
   const pass2 = document.getElementById('reset_pass2').value;
 
@@ -679,7 +772,7 @@ async function guardarNuevaContrasena() {
   if (pass1 !== pass2) return say('bad', 'Las contraseñas no coinciden.');
 
   try {
-    const res = await fetch('http://localhost:5067/api/auth/restablecer', {
+    const res = await fetch(API + '/api/auth/restablecer', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: token, nuevaPassword: pass1 })
@@ -687,13 +780,93 @@ async function guardarNuevaContrasena() {
     const data = await res.json();
 
     if (res.ok) {
-      say('ok', 'Contraseña actualizada correctamente. Redirigiendo...');
-      setTimeout(() => go('login'), 2000);
+      ST.token_temp = null;
+      ST.v = 'login';
+      ST.msg = '<div class="msg ok">Contraseña actualizada correctamente. Ya puede iniciar sesión.</div>';
+      draw();
     } else {
       say('bad', data.mensaje);
     }
   } catch (e) {
-    say('bad', 'Error de conexión.');
+    say('bad', 'Error de conexión con el servidor.');
+  }
+}
+
+// --- USUARIOS Y ROLES (HU-04) ---
+
+function abrirFormularioUsuario() {
+  ST.formUsuario = { id: null, nombres: '', apellidos: '', correo: '', rolId: '' };
+  ST.msg = null;
+  draw();
+  setTimeout(() => { const f = document.getElementById('form_usuario'); if (f) f.scrollIntoView({ behavior: 'smooth' }); }, 50);
+}
+
+function editarUsuario(id) {
+  const u = (ST.usuariosCache || []).find(x => x.id === id);
+  if (!u) return;
+  ST.formUsuario = { id: u.id, nombres: u.nombres, apellidos: u.apellidos, correo: u.correo, rolId: u.rolId };
+  ST.msg = null;
+  draw();
+  setTimeout(() => { const f = document.getElementById('form_usuario'); if (f) f.scrollIntoView({ behavior: 'smooth' }); }, 50);
+}
+
+function cancelarUsuario() {
+  ST.formUsuario = null;
+  ST.msg = null;
+  draw();
+}
+
+async function guardarUsuario() {
+  const f = ST.formUsuario;
+  // Se conserva lo escrito por si hay que volver a mostrar el formulario con un error
+  f.nombres = document.getElementById('usu_nombres').value.trim();
+  f.apellidos = document.getElementById('usu_apellidos').value.trim();
+  f.correo = document.getElementById('usu_correo').value.trim();
+  f.rolId = document.getElementById('usu_rol').value;
+
+  if (!f.nombres) return say('bad', 'Los nombres son obligatorios.');
+  if (!f.id && (!f.correo || !f.correo.includes('@'))) return say('bad', 'Ingrese un correo electrónico válido.');
+  if (!f.rolId) return say('bad', 'Seleccione un rol para el usuario.');
+
+  try {
+    const respuesta = await apiFetch(f.id ? `${API}/api/usuarios/${f.id}` : `${API}/api/usuarios`, {
+      method: f.id ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombres: f.nombres, apellidos: f.apellidos, correo: f.correo, rolId: parseInt(f.rolId) })
+    });
+    const data = await respuesta.json();
+    if (respuesta.ok) {
+      // Si el administrador cambió su propio nombre, se actualiza la barra superior
+      if (f.id && ST.usuario && f.id === ST.usuario.id) {
+        ST.usuario.nombreCompleto = data.usuario.nombreCompleto;
+        const sesion = sesionLeer();
+        if (sesion) sesionGuardar({ ...sesion, usuario: ST.usuario });
+      }
+      ST.formUsuario = null;
+      say(data.correoEnviado === false ? 'warn' : 'ok', data.mensaje);
+    } else if (respuesta.status !== 401) {
+      say('bad', data.mensaje || 'No se pudo guardar el usuario.');
+    }
+  } catch (e) {
+    say('bad', 'Error de conexión con el servidor.');
+  }
+}
+
+async function cambiarEstadoUsuario(id, activar) {
+  const u = (ST.usuariosCache || []).find(x => x.id === id);
+  if (!activar && !confirm(`¿Desactivar a ${u ? u.nombreCompleto : 'este usuario'}? No podrá ingresar, pero se conservarán sus registros.`)) return;
+
+  try {
+    const respuesta = await apiFetch(`${API}/api/usuarios/${id}/estado`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ activo: activar })
+    });
+    const data = await respuesta.json();
+    if (respuesta.ok) say('ok', data.mensaje);
+    else if (respuesta.status !== 401) say('bad', data.mensaje || 'No se pudo cambiar el estado.');
+  } catch (e) {
+    say('bad', 'Error de conexión con el servidor.');
   }
 }
 
@@ -701,9 +874,14 @@ async function guardarNuevaContrasena() {
 
 document.addEventListener('click',()=>{if(ST.menu){ST.menu=null;draw()}});
 let h = location.hash.replace('#','');
-if (h.includes('?')) h = h.split('?')[0]; // Separa el token para que el sistema reconozca la vista
+if (h.includes('?')) {
+  // El token de recuperación viaja en el enlace del correo: se guarda y se limpia la URL
+  const params = new URLSearchParams(h.split('?')[1]);
+  if (params.get('token')) ST.token_temp = params.get('token');
+  h = h.split('?')[0];
+}
 
-if(h&&V[h]){ST.v=h;ST.perfil=h.startsWith('c-')?'cli':['tablero','proyectos','obra','personal','docpers','alertas','usuarios','portafolio','servicios-adm'].includes(h)?'adm':'pub'}
+if (h && V[h]) ST.v = h;
 
 // Arrancar la plataforma
 draw();

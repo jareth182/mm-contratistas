@@ -1,18 +1,28 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace MymContratistas.Api.Models
 {
     public class Usuario
     {
         public int Id { get; set; }
-        public string NombreCompleto { get; set; } = string.Empty;
+        public string Nombres { get; set; } = string.Empty;
+        public string Apellidos { get; set; } = string.Empty;
         public string Correo { get; set; } = string.Empty;
-        public string Password { get; set; } = string.Empty; // En producción debe estar encriptada
-        public string Rol { get; set; } = string.Empty; // Administrador, Gerente de Operaciones, Cliente
+        public string PasswordHash { get; set; } = string.Empty;
         public string Estado { get; set; } = "Activo"; // Activo, Inactivo
-        
-        // Para cumplir el criterio 4 de tu HU-01 (Seguridad)
+
+        public int RolId { get; set; }
+        public Rol Rol { get; set; } = null!;
+
+        // Control de acceso: bloqueo por intentos fallidos
         public int IntentosFallidos { get; set; } = 0;
         public DateTime? BloqueoHasta { get; set; }
+
+        // Enlace de recuperación / definición de contraseña (se guarda el hash del token)
         public string? TokenRecuperacion { get; set; }
         public DateTime? TokenExpiracion { get; set; }
+
+        [NotMapped]
+        public string NombreCompleto => $"{Nombres} {Apellidos}".Trim();
     }
 }

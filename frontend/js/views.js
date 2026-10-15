@@ -9,7 +9,7 @@ V.home=()=>`${navbar()}
    <button class="btn warn" onclick="go('cotizar')">Solicitar cotización</button>
    <button class="btn ghost" style="color:#fff;border-color:#4A6072;margin-left:8px" onclick="go('servicios')">Ver servicios</button>
  </div></section>
- <div class="page">${cota('Proyectos ejecutados','HU05')}
+ <div class="page">${ST.msg||''}${cota('Proyectos ejecutados','HU05')}
   <div class="cards">${PORT.filter(p=>p.e==='Publicado').map(p=>`<article class="pc2">
     <div class="im">Fotografía de obra</div><div class="bd"><h3>${p.n}</h3>
     <div class="hint" style="margin:3px 0 10px">${p.t} · ${p.u} · ${p.a}</div>
@@ -79,9 +79,8 @@ V.login=()=>`${navbar()}
   <p>Acceso para el personal de M/M Contratistas y para clientes con obra en curso.</p></div>${ST.hu?'<span class="hu">HU01</span>':''}</div>
   ${ST.msg||''}
   <div class="card"><div class="cb">
-   <!-- Agregamos los ID para capturar los datos -->
-   <div class="f"><label>Correo electrónico</label><input id="login_correo" value="marco.zapata@mym.pe"></div>
-   <div class="f"><label>Contraseña</label><input type="password" id="login_password" value="123"></div>
+   <div class="f"><label>Correo electrónico</label><input id="login_correo" type="email" placeholder="nombre@mym.pe" autocomplete="username" onkeydown="if(event.key==='Enter')iniciarSesion()"></div>
+   <div class="f"><label>Contraseña</label><input type="password" id="login_password" autocomplete="current-password" onkeydown="if(event.key==='Enter')iniciarSesion()"></div>
    
    <button class="btn" style="width:100%" onclick="iniciarSesion()">Ingresar</button>
    
@@ -91,32 +90,54 @@ V.login=()=>`${navbar()}
   </div></div></div>${pie()}`;
 
 V.recuperar=()=>`${navbar()}
- <div class="page" style="max-width:430px;padding-top:50px"><div class="phead"><div><h1>Recuperar Contraseña</h1>
-  <p>Ingrese su correo para enviarle un enlace de restablecimiento.</p></div></div>
-  ${ST.msg || ''} 
+ <div class="page" style="max-width:430px;padding-top:50px"><div class="phead"><div><h1>Recuperar contraseña</h1>
+  <p>Ingrese su correo y le enviaremos un enlace para crear una contraseña nueva. El enlace vence en 24 horas.</p></div>${ST.hu?'<span class="hu">HU03</span>':''}</div>
+  ${ST.msg || ''}
   <div class="card"><div class="cb">
-   <div class="f"><label>Correo electrónico</label><input id="rec_correo" placeholder="ejemplo@mym.pe"></div>
-   <button type="button" class="btn" style="width:100%" onclick="enviarEnlace()">Enviar Enlace</button>
+   <div class="f"><label>Correo electrónico</label><input id="rec_correo" type="email" placeholder="nombre@correo.com" onkeydown="if(event.key==='Enter')enviarEnlace()"></div>
+   <button type="button" class="btn" style="width:100%" onclick="enviarEnlace()">Enviar enlace</button>
    <div style="display:flex;justify-content:center;margin-top:12px">
-     <button type="button" class="btn link" onclick="go('login')">Volver al inicio</button>
+     <button type="button" class="btn link" onclick="go('login')">Volver a ingresar</button>
    </div>
   </div></div></div>${pie()}`;
 
-V.nueva_password=()=>`${navbar()}
- <div class="page" style="max-width:430px;padding-top:50px"><div class="phead"><div><h1>Nueva Contraseña</h1>
-  <p>Cree una nueva contraseña para su cuenta.</p></div></div>
+V.nueva_password=async()=>{
+  // Se valida el enlace antes de mostrar el formulario (vigente, vencido o ya usado)
+  let valido=false;
+  if(ST.token_temp){
+    try{valido=(await fetch(`${API}/api/auth/validar-token?token=${encodeURIComponent(ST.token_temp)}`)).ok}catch(e){}
+  }
+  if(!valido) return `${navbar()}
+ <div class="page" style="max-width:430px;padding-top:50px"><div class="phead"><div><h1>Nueva contraseña</h1></div></div>
+  <div class="msg bad">El enlace de recuperación es inválido o ha expirado.</div>
+  <button class="btn" onclick="go('recuperar')">Solicitar un enlace nuevo</button></div>${pie()}`;
+  return `${navbar()}
+ <div class="page" style="max-width:430px;padding-top:50px"><div class="phead"><div><h1>Nueva contraseña</h1>
+  <p>Cree una nueva contraseña para su cuenta.</p></div>${ST.hu?'<span class="hu">HU03</span>':''}</div>
+  ${ST.msg || ''}
   <div class="card"><div class="cb">
-   <input type="hidden" id="reset_token" value="${ST.token_temp || ''}">
-   <div class="f"><label>Nueva Contraseña</label><input type="password" id="reset_pass1"></div>
-   <div class="f"><label>Confirmar Contraseña</label><input type="password" id="reset_pass2"></div>
+   <div class="f"><label>Nueva contraseña</label><input type="password" id="reset_pass1" autocomplete="new-password">
+    <div class="hint" style="margin-top:4px">Mínimo 8 caracteres.</div></div>
+   <div class="f"><label>Confirmar contraseña</label><input type="password" id="reset_pass2" autocomplete="new-password" onkeydown="if(event.key==='Enter')guardarNuevaContrasena()"></div>
    <button class="btn" style="width:100%" onclick="guardarNuevaContrasena()">Guardar</button>
   </div></div></div>${pie()}`;
+};
+
+V.perfil=()=>`${navbar()}${crumbs([['Mi perfil']])}
+ <div class="page" style="max-width:560px"><div class="phead"><div><h1>Mi perfil</h1>
+  <p>Datos de la cuenta con la que inició sesión.</p></div></div>
+  ${ST.msg||''}
+  <div class="card"><table><tbody>
+   <tr><th style="width:40%">Nombre completo</th><td>${ST.usuario.nombreCompleto}</td></tr>
+   <tr><th>Correo electrónico</th><td>${ST.usuario.correo}</td></tr>
+   <tr><th>Rol</th><td>${ST.usuario.rol}</td></tr></tbody></table></div></div>${pie()}`;
 
 /* ---- admin ---- */
 V.tablero=()=>`${navbar()}${crumbs([['Tablero']])}
- <div class="page"><div class="phead"><div><h1>Buenos días, Marco</h1>
+ <div class="page"><div class="phead"><div><h1>Buenos días, ${ST.usuario.nombreCompleto.split(' ')[0]}</h1>
    <p>Jueves 10 de septiembre de 2026 · 3 obras en ejecución</p></div>
    <button class="btn" onclick="go('proyectos')">Registrar obra</button></div>
+  ${ST.msg||''}
   <div class="kpi">
    <div><div class="v">3</div><div class="l">Obras en ejecución</div></div>
    <div><div class="v">14</div><div class="l">Colaboradores activos</div></div>
@@ -141,21 +162,42 @@ V.tablero=()=>`${navbar()}${crumbs([['Tablero']])}
    <tr><td class="hint">07/09</td><td>Comentario del cliente en el hito <b>Estructura</b></td></tr>
   </tbody></table></div></div>`;
 
-V.usuarios=()=>`${navbar()}${crumbs([['Usuarios']])}
+V.usuarios=async()=>{
+  let filas='',roles=[];
+  try{
+    const [ru,rr]=await Promise.all([apiFetch(`${API}/api/usuarios`),apiFetch(`${API}/api/usuarios/roles`)]);
+    if(!ru.ok||!rr.ok) throw new Error();
+    ST.usuariosCache=await ru.json(); roles=await rr.json();
+    filas=ST.usuariosCache.map(u=>`<tr>
+     <td><b>${esc(u.nombreCompleto)}</b></td><td>${esc(u.correo)}</td><td>${esc(u.rol)}</td>
+     <td>${u.estado==='Activo'?'<span class="tg ok">Activo</span>':'<span class="tg mt">Inactivo</span>'}</td>
+     <td style="width:170px;white-space:nowrap"><button class="btn link" onclick="editarUsuario(${u.id})">Editar</button> ·
+      ${u.estado==='Activo'?`<button class="btn link" onclick="cambiarEstadoUsuario(${u.id},false)">Desactivar</button>`
+        :`<button class="btn link" onclick="cambiarEstadoUsuario(${u.id},true)">Activar</button>`}</td></tr>`).join('')
+      || '<tr><td colspan="5" style="text-align:center;color:var(--concrete)">No hay usuarios registrados.</td></tr>';
+  }catch(e){
+    filas='<tr><td colspan="5" style="text-align:center;color:var(--rust)">Error al cargar los usuarios desde el servidor.</td></tr>';
+  }
+  const f=ST.formUsuario;
+  const form=f?`<div class="card" style="margin-top:20px" id="form_usuario"><div class="ch"><h4>${f.id?'Editar usuario':'Nuevo usuario'}</h4></div><div class="cb">
+    <div class="g2"><div class="f"><label>Nombres</label><input id="usu_nombres" value="${esc(f.nombres)}"></div>
+     <div class="f"><label>Apellidos</label><input id="usu_apellidos" value="${esc(f.apellidos)}"></div></div>
+    <div class="g2"><div class="f"><label>Correo electrónico</label><input id="usu_correo" type="email" value="${esc(f.correo)}" ${f.id?'disabled':''} placeholder="nombre@correo.com">
+      ${f.id?'':'<div class="hint" style="margin-top:4px">Se enviará un enlace a este correo para que defina su contraseña.</div>'}</div>
+     <div class="f"><label>Rol</label><select id="usu_rol"><option value="">Seleccione un rol</option>
+      ${roles.map(r=>`<option value="${r.id}" ${String(f.rolId)===String(r.id)?'selected':''}>${esc(r.nombre)}</option>`).join('')}</select></div></div>
+    <button class="btn" onclick="guardarUsuario()">${f.id?'Guardar cambios':'Registrar usuario'}</button>
+    <button class="btn ghost" style="margin-left:8px" onclick="cancelarUsuario()">Cancelar</button>
+   </div></div>`:'';
+  return `${navbar()}${crumbs([['Usuarios']])}
  <div class="page"><div class="phead"><div><h1>Usuarios</h1><p>Cuentas con acceso a la plataforma y el rol que define qué puede ver cada una.</p></div>
-  <button class="btn" onclick="say('ok','Usuario registrado correctamente. Se envió el enlace para definir la contraseña.')">Nuevo usuario</button></div>
+  <button class="btn" onclick="abrirFormularioUsuario()">Nuevo usuario</button></div>
   ${ST.hu?'<div class="cota"><span class="t"></span><span class="b"></span><span class="r"></span><span class="hu">HU04</span></div>':''}
   ${ST.msg||''}
   <div class="card"><table><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th><th></th></tr></thead><tbody>
-  ${[['Maribel Minaya Arellano','maribel.minaya@mym.pe','Administrador','Activo'],
-     ['Marco Zapata Neyra','marco.zapata@mym.pe','Gerente de Operaciones','Activo'],
-     ['Rómulo Ccahuana Ayala','romulo.ccahuana@mym.pe','Supervisor de Obra','Activo'],
-     ['Inversiones Del Río S.A.C.','contacto@delrio.pe','Cliente','Activo'],
-     ['Jazmín Zapata Minaya','jazmin.zapata@mym.pe','Administrador','Inactivo']].map(u=>`<tr>
-   <td><b>${u[0]}</b></td><td>${u[1]}</td><td>${u[2]}</td>
-   <td>${u[3]==='Activo'?'<span class="tg ok">Activo</span>':'<span class="tg mt">Inactivo</span>'}</td>
-   <td style="width:150px;white-space:nowrap"><button class="btn link">Editar</button> · <button class="btn link">Desactivar</button></td></tr>`).join('')}
-  </tbody></table></div></div>`;
+  ${filas}
+  </tbody></table></div>${form}</div>`;
+};
 
 V.portafolio=()=>`${navbar()}${crumbs([['Sitio web'],['Portafolio']])}
  <div class="page"><div class="phead"><div><h1>Portafolio</h1><p>Obras que se muestran en el sitio público. Solo las publicadas son visibles para los visitantes.</p></div>
@@ -235,7 +277,7 @@ V.alertas=()=>`${navbar()}${crumbs([['Personal','personal'],['Alertas de documen
 V.proyectos = async () => {
   let filas = '';
   try {
-      const respuesta = await fetch('http://localhost:5067/api/obras');
+      const respuesta = await apiFetch(API + '/api/obras');
       const obrasAPI = await respuesta.json();
 
       if (obrasAPI.length === 0) {
@@ -299,7 +341,7 @@ TC.hitos = async () => {
   let lineaDeTiempo = '';
 
   try {
-    const respuesta = await fetch('http://localhost:5067/api/obras');
+    const respuesta = await apiFetch(API + '/api/obras');
     const obras = await respuesta.json();
     const obraActual = obras.length > 0 ? obras[0] : null;
     const hitosReales = obraActual && obraActual.hitos ? obraActual.hitos : [];
@@ -403,7 +445,7 @@ TC.cuad = async () => {
   let filas = '';
   let total = 0;
   try {
-    const respuesta = await fetch('http://localhost:5067/api/obras');
+    const respuesta = await apiFetch(API + '/api/obras');
     const obras = await respuesta.json();
     const obraActual = obras.length > 0 ? obras[0] : null;
     const cuadrillaReal = obraActual && obraActual.cuadrilla ? obraActual.cuadrilla : [];
@@ -447,7 +489,7 @@ TC.docs = async () => {
   let filas = '';
   let total = 0, visibles = 0;
   try {
-    const respuesta = await fetch('http://localhost:5067/api/obras');
+    const respuesta = await apiFetch(API + '/api/obras');
     const obras = await respuesta.json();
     const obraActual = obras.length > 0 ? obras[0] : null;
     const docsReales = obraActual && obraActual.documentos ? obraActual.documentos : [];
@@ -506,7 +548,7 @@ TC.pres = async () => {
   let editNombre = '', editMonto = '';
   
   try {
-    const respuesta = await fetch('http://localhost:5067/api/obras');
+    const respuesta = await apiFetch(API + '/api/obras');
     const obras = await respuesta.json();
     const obraActual = obras.length > 0 ? obras[0] : null;
     const partidasReales = obraActual && obraActual.partidas ? obraActual.partidas : [];
@@ -565,7 +607,7 @@ TC.gastos = async () => {
   let opcionesPartidas = '';
   
   try {
-    const respuesta = await fetch('http://localhost:5067/api/obras');
+    const respuesta = await apiFetch(API + '/api/obras');
     const obras = await respuesta.json();
     const obraActual = obras.length > 0 ? obras[0] : null;
     
@@ -630,7 +672,7 @@ TC.pagos = async () => {
   let opcionesColaboradores = '';
 
   try {
-    const respuesta = await fetch('http://localhost:5067/api/obras');
+    const respuesta = await apiFetch(API + '/api/obras');
     const obras = await respuesta.json();
     const obraActual = obras.length > 0 ? obras[0] : null;
     
@@ -696,7 +738,7 @@ TC.econ = async () => {
   let tp = 0, tg = 0;
   
   try {
-    const respuesta = await fetch('http://localhost:5067/api/obras');
+    const respuesta = await apiFetch(API + '/api/obras');
     const obras = await respuesta.json();
     const obraActual = obras.length > 0 ? obras[0] : null;
     const partidasReales = obraActual && obraActual.partidas ? obraActual.partidas : [];
@@ -740,6 +782,7 @@ V['c-obra']=()=>`${navbar()}${crumbs([['Mi obra']])}
  <div class="page"><div class="phead"><div><h1>${OBRA.nombre}</h1>
   <p>${OBRA.ubic} · Inicio ${OBRA.ini} · Fin estimado ${OBRA.fin}</p></div>
   <div style="display:flex;gap:7px;align-items:center"><span class="tg ok">En ejecución</span>${ST.hu?'<span class="hu">HU20</span>':''}</div></div>
+  ${ST.msg||''}
  ${elev()}
  <div class="card" style="margin-top:20px"><div class="ch"><h4>Etapas de la obra</h4></div>
   <table><thead><tr><th>Hito</th><th>Estado</th><th>Fecha planificada</th><th>Fecha real</th></tr></thead><tbody>
