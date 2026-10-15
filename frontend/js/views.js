@@ -4,17 +4,20 @@ const V={};
 // Imagen pública de un proyecto publicado (no requiere sesión)
 const imgPublica=id=>`${API}/api/sitio/imagenes/${id}`;
 
+// Tarjeta de un proyecto publicado (portafolio y proyectos relacionados de un servicio)
+const tarjetaProyecto=p=>`<article class="pc2">
+  <div class="im">${p.imagenPrincipalId?`<img src="${imgPublica(p.imagenPrincipalId)}" alt="${esc(p.nombre)}" loading="lazy">`:'Fotografía de obra'}</div>
+  <div class="bd"><h3>${esc(p.nombre)}</h3>
+  <div class="hint" style="margin:3px 0 10px">${esc(p.tipoObra)}${p.ubicacion?` · ${esc(p.ubicacion)}`:''} · ${p.anio}</div>
+  <button class="btn ghost sm" onclick="verProyectoPublico(${p.id})">Ver obra</button></div></article>`;
+
 V.home=async()=>{
   let tarjetas='';
   try{
     const r=await fetch(`${API}/api/sitio/proyectos`);
     if(!r.ok) throw new Error();
     const proyectos=await r.json();
-    tarjetas=proyectos.length?`<div class="cards">${proyectos.map(p=>`<article class="pc2">
-      <div class="im">${p.imagenPrincipalId?`<img src="${imgPublica(p.imagenPrincipalId)}" alt="${esc(p.nombre)}" loading="lazy">`:'Fotografía de obra'}</div>
-      <div class="bd"><h3>${esc(p.nombre)}</h3>
-      <div class="hint" style="margin:3px 0 10px">${esc(p.tipoObra)}${p.ubicacion?` · ${esc(p.ubicacion)}`:''} · ${p.anio}</div>
-      <button class="btn ghost sm" onclick="verProyectoPublico(${p.id})">Ver obra</button></div></article>`).join('')}</div>`
+    tarjetas=proyectos.length?`<div class="cards">${proyectos.map(tarjetaProyecto).join('')}</div>`
       :'<p class="hint">Pronto publicaremos aquí nuestras obras ejecutadas.</p>';
   }catch(e){
     tarjetas='<div class="msg warn">No se pudo cargar el portafolio en este momento. Intente nuevamente más tarde.</div>';
@@ -24,7 +27,7 @@ V.home=async()=>{
    <div class="rl"><i></i>CONSTRUCCIÓN DE EDIFICIOS · LIMA</div>
    <h1>Obras que puede seguir día por día</h1>
    <p>Ejecutamos edificaciones multifamiliares, comerciales y remodelaciones. Cada cliente recibe un acceso donde ve el avance, los gastos y los documentos de su obra.</p>
-   <button class="btn warn" onclick="go('cotizar')">Solicitar cotización</button>
+   <button class="btn warn" onclick="cotizarServicio(null)">Solicitar cotización</button>
    <button class="btn ghost" style="color:#fff;border-color:#4A6072;margin-left:8px" onclick="go('servicios')">Ver servicios</button>
  </div></section>
  <div class="page">${ST.msg||''}${cota('Proyectos ejecutados','HU05')}
@@ -49,7 +52,7 @@ V['obra-pub']=async()=>{
   return `${navbar()}${crumbs([['Proyectos','home'],[esc(p.nombre)]])}
  <div class="page"><div class="phead"><div><h1>${esc(p.nombre)}</h1>
    <p>${esc(p.tipoObra)}${p.ubicacion?` · ${esc(p.ubicacion)}`:''}</p></div>
-   <button class="btn warn" onclick="go('cotizar')">Solicitar cotización</button>${ST.hu?'<span class="hu">HU05</span>':''}</div>
+   <button class="btn warn" onclick="cotizarServicio(${p.servicio?p.servicio.id:'null'})">Solicitar cotización</button>${ST.hu?'<span class="hu">HU05</span>':''}</div>
   <div class="g2" style="gap:26px">
    <div>${principal?`<button class="gal-main" onclick="abrirGaleria(0)" title="Ampliar"><img src="${imgPublica(principal.id)}" alt="${esc(principal.nombre)}"></button>
      <div class="thumbs" style="margin-top:8px">${resto.map((i,n)=>`<button class="gal-th" onclick="abrirGaleria(${n+1})" title="Ampliar"><img src="${imgPublica(i.id)}" alt="${esc(i.nombre)}" loading="lazy"></button>`).join('')}</div>`
@@ -57,7 +60,8 @@ V['obra-pub']=async()=>{
    <div><div class="card"><table><tbody>
      <tr><th style="width:45%">Tipo de obra</th><td>${esc(p.tipoObra)}</td></tr>
      <tr><th>Ubicación</th><td>${esc(p.ubicacion)||'—'}</td></tr>
-     <tr><th>Año de ejecución</th><td>${p.anio}</td></tr></tbody></table></div>
+     <tr><th>Año de ejecución</th><td>${p.anio}</td></tr>
+     ${p.servicio?`<tr><th>Servicio</th><td><button class="btn link" onclick="verServicioPublico(${p.servicio.id})">${esc(p.servicio.nombre)}</button></td></tr>`:''}</tbody></table></div>
     ${p.descripcion?`<p style="margin-top:16px;white-space:pre-line">${esc(p.descripcion)}</p>`:''}</div>
   </div></div>${pie()}`;
 };
@@ -67,8 +71,35 @@ V.servicios=()=>`${navbar()}${crumbs([['Inicio','home'],['Servicios']])}
    <p>Trabajamos con constructoras, inversionistas y propietarios directos. Toda obra incluye personal asegurado y equipo de protección.</p></div></div>
    ${ST.hu?'<div class="cota"><span class="t"></span><span class="b"></span><span class="r"></span><span class="hu">HU06</span></div>':''}
    ${(ST.servicios||[]).map(s=>`<div class="srv"><h3>${esc(s.nombre)}</h3><div><p style="margin:0 0 10px">${esc(s.descripcion)}</p>
-     <button class="btn ghost sm" onclick="go('cotizar')">Cotizar este servicio</button></div></div>`).join('')}
+     <button class="btn ghost sm" onclick="verServicioPublico(${s.id})">Ver detalle</button>
+     <button class="btn ghost sm" style="margin-left:6px" onclick="cotizarServicio(${s.id})">Cotizar este servicio</button></div></div>`).join('')
+     ||'<p class="hint">Pronto publicaremos aquí nuestro catálogo de servicios.</p>'}
  </div>${pie()}`;
+
+V['servicio-pub']=async()=>{
+  let s=null;
+  if(ST.servicioPubId){
+    try{
+      const r=await fetch(`${API}/api/sitio/servicios/${ST.servicioPubId}`);
+      if(r.ok) s=await r.json();
+    }catch(e){ /* se muestra el aviso de abajo */ }
+  }
+  if(!s) return `${navbar()}${crumbs([['Servicios','servicios'],['Servicio']])}
+ <div class="page"><div class="msg warn">El servicio que busca no existe o ya no está publicado.</div>
+  <button class="btn" onclick="go('servicios')">Ver todos los servicios</button></div>${pie()}`;
+
+  const lista=(titulo,items)=>items.length?`<div class="card"><div class="ch"><h4>${titulo}</h4></div><div class="cb">
+    <ul style="margin:0;padding-left:18px">${items.map(i=>`<li style="margin:3px 0">${esc(i)}</li>`).join('')}</ul></div></div>`:'';
+  return `${navbar()}${crumbs([['Servicios','servicios'],[esc(s.nombre)]])}
+ <div class="page"><div class="phead"><div><h1>${esc(s.nombre)}</h1>
+   <p style="white-space:pre-line">${esc(s.descripcion)}</p></div>
+   <button class="btn warn" onclick="cotizarServicio(${s.id})">Solicitar cotización</button>${ST.hu?'<span class="hu">HU06</span>':''}</div>
+  <div class="g2" style="gap:18px">${lista('Beneficios',s.beneficios)}${lista('Características',s.caracteristicas)}</div>
+  ${cota('Proyectos relacionados','','h3')}
+  ${s.proyectos.length?`<div class="cards">${s.proyectos.map(tarjetaProyecto).join('')}</div>`
+    :'<p class="hint">Aún no hay proyectos publicados para este servicio.</p>'}
+ </div>${pie()}`;
+};
 
 V.nosotros=()=>`${navbar()}${crumbs([['Inicio','home'],['Nosotros']])}
  <div class="page"><div class="phead"><div><h1>Nosotros</h1>
@@ -95,7 +126,7 @@ V.cotizar=()=>`${navbar()}${crumbs([['Inicio','home'],['Solicitar cotización']]
    <div class="g2"><div class="f"><label>Nombres y apellidos</label><input placeholder="Ana Torres Miranda"></div>
      <div class="f"><label>Teléfono</label><input placeholder="987 654 321"></div></div>
    <div class="f"><label>Correo electrónico</label><input placeholder="ana.torres@correo.com"></div>
-   <div class="g2"><div class="f"><label>Tipo de servicio</label><select>${(ST.servicios||[]).map(s=>`<option>${esc(s.nombre)}</option>`).join('')}</select></div>
+   <div class="g2"><div class="f"><label>Tipo de servicio</label><select id="cot_servicio">${(ST.servicios||[]).map(s=>`<option value="${s.id}" ${s.id===ST.servicioCotizar?'selected':''}>${esc(s.nombre)}</option>`).join('')}</select></div>
      <div class="f"><label>Distrito</label><input placeholder="San Isidro"></div></div>
    <div class="f"><label>Descripción del trabajo</label><textarea placeholder="Ampliación de un tercer piso sobre losa existente, aproximadamente 90 m²."></textarea></div>
    <div class="f"><label>Planos o fotos de referencia</label><div class="thumbs">
@@ -250,6 +281,8 @@ V.portafolio=async()=>{
   }
 
   const f=ST.formProyecto;
+  let serviciosAdm=[];
+  if(f){ try{ const rs=await apiFetch(`${API}/api/servicios`); if(rs.ok) serviciosAdm=await rs.json(); }catch(e){} }
   const form=f?`<div class="card" style="margin-top:20px" id="form_proyecto"><div class="ch"><h4>${f.id?'Editar proyecto':'Nuevo proyecto'}</h4>
     <span class="hint">Se guarda como borrador hasta que lo publique.</span></div><div class="cb">
     <div class="g2"><div class="f"><label>Nombre del proyecto</label><input id="port_nombre" value="${esc(f.nombre)}" placeholder="Condominio Las Palmeras"></div>
@@ -257,6 +290,9 @@ V.portafolio=async()=>{
       ${TIPOS_OBRA.map(t=>`<option ${f.tipoObra===t?'selected':''}>${t}</option>`).join('')}</select></div>
      <div class="f"><label>Ubicación</label><input id="port_ubicacion" value="${esc(f.ubicacion)}" placeholder="Chorrillos, Lima"></div>
      <div class="f"><label>Año de ejecución</label><input id="port_anio" type="number" min="1990" value="${esc(f.anio)}" placeholder="2025"></div></div>
+    <div class="f"><label>Servicio relacionado</label><select id="port_servicio"><option value="">Sin servicio</option>
+      ${serviciosAdm.map(s=>`<option value="${s.id}" ${String(f.servicioId)===String(s.id)?'selected':''}>${esc(s.nombre)}${s.estado==='Oculto'?' (oculto)':''}</option>`).join('')}</select>
+      <div class="hint" style="margin-top:4px">El proyecto aparecerá en «Proyectos relacionados» de ese servicio.</div></div>
     <div class="f"><label>Descripción</label><textarea id="port_descripcion" placeholder="Edificio de cinco niveles con veinte departamentos.">${esc(f.descripcion)}</textarea></div>
     <button class="btn" onclick="guardarProyecto()">${f.id?'Guardar cambios':'Guardar borrador'}</button>
     <button class="btn ghost" style="margin-left:8px" onclick="cancelarProyecto()">Cancelar</button>

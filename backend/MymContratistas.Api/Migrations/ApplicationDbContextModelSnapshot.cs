@@ -396,6 +396,9 @@ namespace MymContratistas.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<int?>("ServicioId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("TipoObra")
                         .IsRequired()
                         .HasColumnType("text");
@@ -405,6 +408,8 @@ namespace MymContratistas.Api.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ServicioId");
 
                     b.ToTable("Portafolio");
                 });
@@ -628,6 +633,16 @@ namespace MymContratistas.Api.Migrations
                         .IsRequired();
 
                     b.Navigation("Obra");
+                });
+
+            modelBuilder.Entity("MymContratistas.Api.Models.ProyectoPortafolio", b =>
+                {
+                    b.HasOne("MymContratistas.Api.Models.Servicio", "Servicio")
+                        .WithMany()
+                        .HasForeignKey("ServicioId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Servicio");
                 });
 
             modelBuilder.Entity("MymContratistas.Api.Models.Usuario", b =>

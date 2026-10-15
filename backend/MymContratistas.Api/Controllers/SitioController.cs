@@ -45,7 +45,7 @@ namespace MymContratistas.Api.Controllers
         [HttpGet("proyectos/{id}")]
         public async Task<IActionResult> Proyecto(int id)
         {
-            var p = await Publicados().Include(x => x.Imagenes).FirstOrDefaultAsync(x => x.Id == id);
+            var p = await Publicados().Include(x => x.Imagenes).Include(x => x.Servicio).FirstOrDefaultAsync(x => x.Id == id);
             if (p == null) return NotFound(new { mensaje = "El proyecto no existe o ya no está publicado." });
 
             return Ok(new
@@ -56,6 +56,8 @@ namespace MymContratistas.Api.Controllers
                 ubicacion = p.Ubicacion,
                 anio = p.Anio,
                 descripcion = p.Descripcion,
+                // Un servicio oculto no se enlaza desde el sitio
+                servicio = p.Servicio != null && p.Servicio.Estado == Servicio.Publicado ? new { id = p.Servicio.Id, nombre = p.Servicio.Nombre } : null,
                 imagenes = p.Imagenes.OrderByDescending(i => i.EsPrincipal).ThenBy(i => i.Id)
                     .Select(i => new { id = i.Id, nombre = i.NombreOriginal, esPrincipal = i.EsPrincipal }).ToList()
             });
@@ -70,6 +72,38 @@ namespace MymContratistas.Api.Controllers
                 .Select(s => new { id = s.Id, nombre = s.Nombre, descripcion = s.Descripcion })
                 .ToListAsync();
             return Ok(servicios);
+        }
+
+        // GET: api/sitio/servicios/{id}  — detalle con beneficios, características y proyectos relacionados (HU06)
+        [HttpGet("servicios/{id}")]
+        public async Task<IActionResult> DetalleServicio(int id)
+        {
+            var s = await _context.Servicios.FirstOrDefaultAsync(x => x.Id == id && x.Estado == Models.Servicio.Publicado);
+            if (s == null) return NotFound(new { mensaje = "El servicio no existe o ya no está publicado." });
+
+            var relacionados = await Publicados().Where(p => p.ServicioId == id)
+                .OrderByDescending(p => p.Anio).ThenBy(p => p.Nombre)
+                .Select(p => new
+                {
+                    id = p.Id,
+                    nombre = p.Nombre,
+                    tipoObra = p.TipoObra,
+                    ubicacion = p.Ubicacion,
+                    anio = p.Anio,
+                    imagenPrincipalId = p.Imagenes.Where(i => i.EsPrincipal).Select(i => (int?)i.Id).FirstOrDefault()
+                })
+                .ToListAsync();
+
+            static string[] Lista(string texto) => texto.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            return Ok(new
+            {
+                id = s.Id,
+                nombre = s.Nombre,
+                descripcion = s.Descripcion,
+                beneficios = Lista(s.Beneficios),
+                caracteristicas = Lista(s.Caracteristicas),
+                proyectos = relacionados
+            });
         }
 
         // GET: api/sitio/imagenes/{id}  — solo imágenes de proyectos publicados
