@@ -116,8 +116,14 @@ namespace MymContratistas.Api.Controllers
         {
             var proyecto = await _context.Portafolio.Include(p => p.Imagenes).FirstOrDefaultAsync(p => p.Id == id);
             if (proyecto == null) return NotFound(new { mensaje = "El proyecto no existe." });
-            if (!proyecto.Imagenes.Any(i => i.EsPrincipal))
-                return BadRequest(new { mensaje = "Suba al menos una imagen y marque la principal antes de publicar." });
+
+            // Datos mínimos para mostrarlo en el sitio público
+            var faltantes = new List<string>();
+            if (string.IsNullOrWhiteSpace(proyecto.Ubicacion)) faltantes.Add("ubicación");
+            if (string.IsNullOrWhiteSpace(proyecto.Descripcion)) faltantes.Add("descripción");
+            if (!proyecto.Imagenes.Any(i => i.EsPrincipal)) faltantes.Add("imagen principal");
+            if (faltantes.Count > 0)
+                return BadRequest(new { mensaje = $"Para publicar complete: {string.Join(", ", faltantes)}." });
 
             proyecto.Estado = ProyectoPortafolio.Publicado;
             await _context.SaveChangesAsync();
@@ -133,6 +139,23 @@ namespace MymContratistas.Api.Controllers
             proyecto.Estado = ProyectoPortafolio.Borrador;
             await _context.SaveChangesAsync();
             return Ok(new { mensaje = "Proyecto retirado del portafolio público.", proyecto = Proyectar(proyecto) });
+        }
+
+        // Elimina el proyecto con sus imágenes (registros y archivos)
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Eliminar(int id)
+        {
+            var proyecto = await _context.Portafolio.Include(p => p.Imagenes).FirstOrDefaultAsync(p => p.Id == id);
+            if (proyecto == null) return NotFound(new { mensaje = "El proyecto no existe." });
+
+            var archivos = proyecto.Imagenes.Select(i => Path.Combine(CarpetaImagenes(), i.Archivo)).ToList();
+            _context.Portafolio.Remove(proyecto);
+            await _context.SaveChangesAsync();
+
+            foreach (var ruta in archivos)
+                if (System.IO.File.Exists(ruta)) System.IO.File.Delete(ruta);
+
+            return Ok(new { mensaje = "Proyecto eliminado del portafolio." });
         }
 
         // POST: api/portafolio/{id}/imagenes  (multipart, campo "archivos")
