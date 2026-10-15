@@ -3,8 +3,8 @@ ST.usuario = (sesionLeer() || {}).usuario || null;
 ST.perfil = ST.usuario ? (ST.usuario.rol === 'Cliente' ? 'cli' : 'adm') : 'pub';
 
 /* ================= control ================= */
-function go(v){ST.formUsuario=null;ST.v=v;ST.msg=null;ST.menu=null;ST.nav=false;draw();window.scrollTo({top:0})}
-function abrirObra(id){ST.obraId=id;ST.tab='hitos';go('obra')}
+function go(v){ST.formUsuario=null;ST.formHito=null;ST.v=v;ST.msg=null;ST.menu=null;ST.nav=false;draw();window.scrollTo({top:0})}
+function abrirObra(id){ST.obraId=id;ST.formHito=null;ST.hitoEditando=null;ST.tab='hitos';go('obra')}
 function tab(t){ST.tab=t;ST.msg=null;draw()}
 function tog(m,e){e.stopPropagation();ST.menu=ST.menu===m?null:m;draw()}
 function say(t,x){ST.msg=`<div class="msg ${t}">${x}</div>`;draw();
@@ -82,38 +82,69 @@ async function guardarObra() {
 
 // --- HITOS ---
 
-async function guardarHito(obraId) {
-  const nombre = document.getElementById('nuevo_hito_nombre').value;
-  const peso = parseInt(document.getElementById('nuevo_hito_peso').value);
-  const fechaPlanificada = document.getElementById('nuevo_hito_fecha').value;
-  
-  if (!nombre || isNaN(peso)) {
-    say('bad', 'El nombre y el peso del hito son obligatorios.');
-    return;
-  }
+function capturarFormHito() {
+  const f = ST.formHito || { id: null };
+  f.nombre = document.getElementById('nuevo_hito_nombre').value.trim();
+  f.peso = document.getElementById('nuevo_hito_peso').value;
+  f.fecha = document.getElementById('nuevo_hito_fecha').value;
+  ST.formHito = f;
+  return f;
+}
 
-  const nuevoHito = {
-    nombre: nombre,
-    peso: peso,
-    fechaPlanificada: fechaPlanificada,
-    estado: 'Pendiente',
-    avancePorcentaje: 0
-  };
+function editarHito(id) {
+  const h = (ST.hitosCache || []).find(x => x.id === id);
+  if (!h) return;
+  ST.formHito = { id: h.id, nombre: h.nombre, peso: h.peso, fecha: h.fechaPlanificada || '' };
+  ST.msg = null;
+  draw();
+  setTimeout(() => { const el = document.getElementById('form_hito'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }, 80);
+}
+
+function cancelarHito() {
+  ST.formHito = null;
+  ST.msg = null;
+  draw();
+}
+
+async function guardarHito(obraId) {
+  const f = capturarFormHito();
+  const peso = parseInt(f.peso);
+
+  if (!f.nombre) return say('bad', 'El nombre del hito es obligatorio.');
+  if (isNaN(peso) || peso < 1 || peso > 100) return say('bad', 'El peso debe ser un número entre 1 y 100.');
+
+  const datos = { nombre: f.nombre, peso: peso, fechaPlanificada: f.fecha || null };
 
   try {
-    const respuesta = await apiFetch(`${API}/api/obras/${obraId}/hitos`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(nuevoHito)
+    const respuesta = await apiFetch(f.id ? `${API}/api/obras/hitos/${f.id}/definicion` : `${API}/api/obras/${obraId}/hitos`, {
+      method: f.id ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
     });
 
     if (respuesta.ok) {
-      say('ok', 'Hito registrado correctamente en PostgreSQL.');
-      draw();
-    } else {
-      say('bad', 'Ocurrió un error al guardar el hito.');
+      const edicion = !!f.id;
+      ST.formHito = null;
+      say('ok', edicion ? 'Hito actualizado correctamente.' : 'Hito registrado correctamente.');
+    } else if (respuesta.status !== 401) {
+      say('bad', (await respuesta.text()) || 'Ocurrió un error al guardar el hito.');
+    }
+  } catch (error) {
+    say('bad', 'Error de conexión con el servidor.');
+  }
+}
+
+async function eliminarHito(id) {
+  const h = (ST.hitosCache || []).find(x => x.id === id);
+  if (!confirm(`¿Eliminar el hito "${h ? h.nombre : ''}"?`)) return;
+
+  try {
+    const respuesta = await apiFetch(`${API}/api/obras/hitos/${id}`, { method: 'DELETE' });
+    if (respuesta.ok) {
+      if (ST.formHito && ST.formHito.id === id) ST.formHito = null;
+      say('ok', 'Hito eliminado correctamente.');
+    } else if (respuesta.status !== 401) {
+      say('bad', (await respuesta.text()) || 'No se pudo eliminar el hito.');
     }
   } catch (error) {
     say('bad', 'Error de conexión con el servidor.');

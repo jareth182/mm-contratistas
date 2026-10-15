@@ -349,48 +349,47 @@ TC.hitos = async () => {
   let nombreHitoSeleccionado = 'Seleccione un hito de la tabla';
   let idHitoSeleccionado = null;
   let lineaDeTiempo = '';
+  let resumenPesos = '';
+  let hitosReales = [];
 
   try {
     const respuesta = await apiFetch(API + '/api/obras');
     const obras = await respuesta.json();
     const obraActual = obras.find(o => o.id === ST.obraId) || null;
-    const hitosReales = obraActual && obraActual.hitos ? obraActual.hitos : [];
+    hitosReales = obraActual && obraActual.hitos ? obraActual.hitos : [];
+    ST.hitosCache = hitosReales;
+
+    // Suma acumulada de pesos (debe llegar a 100 %)
+    const acumulado = hitosReales.reduce((a, h) => a + h.peso, 0);
+    const estadoPesos = acumulado === 100 ? 'ok' : (acumulado > 100 ? 'bad' : 'warn');
+    const textoPesos = acumulado === 100 ? 'La planificación está completa.'
+      : `Faltan ${100 - acumulado}% por asignar para completar el 100%.`;
+    resumenPesos = `<div class="msg ${estadoPesos}" style="margin-top:20px"><b>Suma de pesos: ${acumulado}% de 100%.</b> ${hitosReales.length ? textoPesos : 'Aún no hay hitos definidos.'}
+      <div class="bar" style="margin-top:8px"><i style="width:${Math.min(acumulado, 100)}%"></i></div></div>`;
 
     if (hitosReales.length === 0) {
       filas = `<tr><td colspan="8" style="text-align:center;color:var(--concrete)">No hay hitos registrados en esta obra.</td></tr>`;
     } else {
-      const cerrados = hitosReales.filter(h => h.avancePorcentaje === 100).length;
-      const totalHitos = hitosReales.length;
-      
-      let avanceGlobal = 0;
-      hitosReales.forEach(h => { avanceGlobal += (h.avancePorcentaje * h.peso) / 100; });
-      avanceGlobal = Math.round(avanceGlobal);
+      lineaDeTiempo = elevHitos(hitosReales);
 
-      const anchoBarra = totalHitos > 0 ? ((cerrados + (hitosReales[cerrados] ? hitosReales[cerrados].avancePorcentaje / 100 : 0)) / totalHitos) * 100 : 0;
-
-      lineaDeTiempo = `<div class="elev"><div class="tr">
-        <div class="pc">${avanceGlobal}% ejecutado · ${cerrados} de ${totalHitos} hitos cerrados</div>
-        <div class="gr"></div><div class="fl" style="width:${anchoBarra.toFixed(1)}%"></div>
-        <div class="cols">${hitosReales.map(h => `<div class="col ${h.avancePorcentaje === 100 ? 'dn' : (h.avancePorcentaje > 0 ? 'nw' : '')}">
-          <div class="mk2"></div><div class="nm">${h.nombre}</div><div class="mt2">${h.avancePorcentaje}% · peso ${h.peso}%</div></div>`).join('')}</div>
-        <div class="cap"><span>Inicio del proyecto</span><span>Conectado a PostgreSQL</span></div>
-      </div></div>`;
-
-      filas = hitosReales.map((h, i) => {
+      filas = hitosReales.map(h => {
         if (ST.hitoEditando && ST.hitoEditando === h.id) {
             nombreHitoSeleccionado = h.nombre;
             idHitoSeleccionado = h.id;
         }
+        const pendiente = h.estado === 'Pendiente' && h.avancePorcentaje === 0;
 
         return `<tr>
-          <td class="num">${i + 1}</td>
-          <td><b>${h.nombre}</b></td>
+          <td class="num">${h.orden}</td>
+          <td><b>${esc(h.nombre)}</b></td>
           <td class="num">${h.peso}%</td>
-          <td>${h.fechaPlanificada || '—'}</td>
-          <td>${h.fechaReal || '—'}</td>
+          <td>${fmtFecha(h.fechaPlanificada)}</td>
+          <td>${fmtFecha(h.fechaReal)}</td>
           <td>${h.estado === 'Completado' ? '<span class="tg ok">Completado</span>' : h.estado === 'En proceso' ? '<span class="tg wn">En proceso</span>' : '<span class="tg mt">Pendiente</span>'}</td>
           <td class="num">${h.avancePorcentaje}%</td>
-          <td style="white-space:nowrap;width:150px">
+          <td style="white-space:nowrap;width:260px">
+            ${pendiente ? `<button class="btn link" onclick="editarHito(${h.id})">Editar</button> ·
+            <button class="btn link" onclick="eliminarHito(${h.id})">Eliminar</button> · ` : ''}
             ${h.avancePorcentaje < 100 ? `<button class="btn link" onclick="seleccionarHito(${h.id})">Registrar avance</button>` : '<span class="hint">—</span>'}
           </td>
         </tr>`;
@@ -400,16 +399,20 @@ TC.hitos = async () => {
     filas = `<tr><td colspan="8" style="text-align:center;color:var(--rust)">Error al cargar los hitos desde el servidor.</td></tr>`;
   }
 
+  const f = ST.formHito || { id: null, nombre: '', peso: '', fecha: '' };
+
   return `${lineaDeTiempo}
-   <div class="card" style="margin-top:20px"><div class="ch"><h4>Nuevo Hito</h4></div><div class="cb">
+   ${resumenPesos}
+   <div class="card" style="margin-top:20px" id="form_hito"><div class="ch"><h4>${f.id ? 'Editar hito' : 'Agregar hito'}</h4></div><div class="cb">
     <div class="g3">
-     <div class="f"><label>Nombre del hito</label><input id="nuevo_hito_nombre" placeholder="Ej. Vaciado de losa"></div>
-     <div class="f"><label>Peso (%)</label><input id="nuevo_hito_peso" type="number" placeholder="15"></div>
-     <div class="f"><label>Fecha planificada</label><input id="nuevo_hito_fecha" placeholder="DD/MM/YYYY"></div>
+     <div class="f"><label>Nombre del hito</label><input id="nuevo_hito_nombre" placeholder="Ej. Vaciado de losa" value="${esc(f.nombre)}"></div>
+     <div class="f"><label>Peso (%)</label><input id="nuevo_hito_peso" type="number" min="1" max="100" placeholder="15" value="${esc(f.peso)}"></div>
+     <div class="f"><label>Fecha planificada</label><input id="nuevo_hito_fecha" type="date" value="${esc(f.fecha)}"></div>
     </div>
-    <button class="btn sm" onclick="guardarHito(${ST.obraId})">Guardar hito</button>
+    <button class="btn sm" onclick="guardarHito(${ST.obraId})">${f.id ? 'Guardar cambios' : 'Guardar hito'}</button>
+    ${f.id ? '<button class="btn ghost sm" style="margin-left:8px" onclick="cancelarHito()">Cancelar</button>' : ''}
    </div></div>
-   
+
    <div class="card" style="margin-top:20px"><div class="ch"><span class="hint">Listado de hitos del proyecto</span></div>
    <table><thead><tr><th class="num" style="width:60px">Orden</th><th>Hito</th><th class="num">Peso</th><th>Planificada</th><th>Real</th><th>Estado</th><th class="num">Avance</th><th></th></tr></thead><tbody>
    ${filas}
@@ -417,7 +420,7 @@ TC.hitos = async () => {
 
    <div class="card" style="margin-top:20px">
     <div class="ch">
-      <h4>Registrar avance · <span style="color:var(--safety)">${nombreHitoSeleccionado}</span></h4>
+      <h4>Registrar avance · <span style="color:var(--safety)">${esc(nombreHitoSeleccionado)}</span></h4>
       ${ST.hu?'<span class="hu">HU13</span>':''}
     </div>
     <div class="cb">
@@ -448,7 +451,7 @@ TC.hitos = async () => {
       </button>
     </div>
    </div>
-   <div class="msg bad" style="margin-top:18px">No se puede eliminar un hito con avances o gastos asociados.</div>`;
+   <p class="hint" style="margin-top:14px">Solo se pueden editar o eliminar los hitos pendientes, sin avances registrados.</p>`;
 };
 
 TC.cuad = async () => {
@@ -788,17 +791,28 @@ TC.econ = async () => {
 };
 
 /* ---- cliente ---- */
-V['c-obra']=()=>`${navbar()}${crumbs([['Mi obra']])}
- <div class="page"><div class="phead"><div><h1>${OBRA.nombre}</h1>
-  <p>${OBRA.ubic} · Inicio ${OBRA.ini} · Fin estimado ${OBRA.fin}</p></div>
-  <div style="display:flex;gap:7px;align-items:center"><span class="tg ok">En ejecución</span>${ST.hu?'<span class="hu">HU20</span>':''}</div></div>
+V['c-obra']=async()=>{
+  let obra=null;
+  try{
+    const r=await apiFetch(`${API}/api/cliente/obras`);
+    if(r.ok){const l=await r.json();obra=l[0]||null}
+  }catch(e){}
+  if(!obra) return `${navbar()}${crumbs([['Mi obra']])}
+   <div class="page"><div class="phead"><div><h1>Mi obra</h1></div></div>
+   ${ST.msg||''}
+   <div class="msg warn">Aún no tiene una obra asignada. Si cree que es un error, comuníquese con M/M Contratistas.</div></div>`;
+  const hitos=obra.hitos;
+  return `${navbar()}${crumbs([['Mi obra']])}
+ <div class="page"><div class="phead"><div><h1>${esc(obra.nombre)}</h1>
+  <p>${esc(obra.cliente)}</p></div>
+  <div style="display:flex;gap:7px;align-items:center"><span class="tg ${obra.estado==='Finalizado'?'mt':'ok'}">${obra.estado==='Finalizado'?'Finalizado':'En ejecución'}</span>${ST.hu?'<span class="hu">HU20</span>':''}</div></div>
   ${ST.msg||''}
- ${elev()}
+ ${elevHitos(hitos)}
  <div class="card" style="margin-top:20px"><div class="ch"><h4>Etapas de la obra</h4></div>
   <table><thead><tr><th>Hito</th><th>Estado</th><th>Fecha planificada</th><th>Fecha real</th></tr></thead><tbody>
-  ${OBRA.hitos.map(h=>`<tr><td><b>${h.n}</b></td>
-   <td>${h.e==='Completado'?'<span class="tg ok">Completado</span>':h.e==='En proceso'?'<span class="tg wn">En proceso</span>':'<span class="tg mt">Pendiente</span>'}</td>
-   <td>${h.pl}</td><td>${h.rl}</td></tr>`).join('')}
+  ${hitos.map(h=>`<tr><td><b>${esc(h.nombre)}</b></td>
+   <td>${h.estado==='Completado'?'<span class="tg ok">Completado</span>':h.estado==='En proceso'?'<span class="tg wn">En proceso</span>':'<span class="tg mt">Pendiente</span>'}</td>
+   <td>${fmtFecha(h.fechaPlanificada)}</td><td>${fmtFecha(h.fechaReal)}</td></tr>`).join('')||'<tr><td colspan="4" style="text-align:center;color:var(--concrete)">El equipo aún no ha definido los hitos de su obra.</td></tr>'}
   </tbody></table></div>
  <div class="card" style="margin-top:20px"><div class="ch"><h4>Estructura · avance del 10/09/2026</h4>
    <button class="btn ghost sm" onclick="go('c-cmt')">Comentar</button></div>
@@ -807,6 +821,7 @@ V['c-obra']=()=>`${navbar()}${crumbs([['Mi obra']])}
  <div class="card" style="margin-top:20px"><div class="ch"><h4>Documentos de mi obra</h4></div>
   <div class="cb"><div class="thumbs">${OBRA.docs.filter(d=>d.v).map(d=>`<span class="th doc">${d.n}</span>`).join('')}</div></div></div>
  </div>`;
+};
 
 V['c-gastos']=()=>{const t=OBRA.part.reduce((a,p)=>a+p.gs,0);
  return `${navbar()}${crumbs([['Mi obra','c-obra'],['Gastos']])}

@@ -6,10 +6,11 @@ namespace MymContratistas.Api.Models
     {
         public int Id { get; set; }
         public string Nombre { get; set; } = string.Empty;
+        public int Orden { get; set; }
         public int Peso { get; set; }
         public string Estado { get; set; } = "Pendiente";
-        public string? FechaPlanificada { get; set; }
-        public string? FechaReal { get; set; }
+        public DateOnly? FechaPlanificada { get; set; }
+        public DateOnly? FechaReal { get; set; }
         public int AvancePorcentaje { get; set; }
         
         // Nuevos campos para registrar el avance
