@@ -12,5 +12,7 @@ namespace MymContratistas.Api.Models
         // Para cumplir el criterio 4 de tu HU-01 (Seguridad)
         public int IntentosFallidos { get; set; } = 0;
         public DateTime? BloqueoHasta { get; set; }
+        public string? TokenRecuperacion { get; set; }
+        public DateTime? TokenExpiracion { get; set; }
     }
 }

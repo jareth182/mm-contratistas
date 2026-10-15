@@ -65,5 +65,48 @@ namespace MymContratistas.Api.Controllers
                 correo = usuario.Correo
             });
         }
+        [HttpPost("recuperar")]
+        public async Task<IActionResult> RecuperarPassword([FromBody] RecuperarDto peticion)
+        {
+            var usuario = await _context.Usuarios.FirstOrDefaultAsync(u => u.Correo == peticion.Correo);
+    
+            // Por seguridad, siempre devolvemos el mismo mensaje aunque el correo no exista (evita escaneo de correos)
+            if (usuario == null) 
+                return Ok(new { mensaje = "Si el correo se encuentra registrado, recibirá un enlace de recuperación en los próximos minutos." });
+
+            // Generamos un token seguro y le damos 24 horas de vigencia (Criterio 2)
+            usuario.TokenRecuperacion = Guid.NewGuid().ToString();
+            usuario.TokenExpiracion = DateTime.UtcNow.AddHours(24);
+            await _context.SaveChangesAsync();
+
+            // SIMULACIÓN: Como aún no conectamos un servidor de correos real (SMTP), 
+            // devolveremos el token al frontend para que puedas probar la pantalla "Nueva Contraseña".
+            return Ok(new { 
+                mensaje = "Si el correo se encuentra registrado, recibirá un enlace de recuperación en los próximos minutos.",
+                tokenSimulado = usuario.TokenRecuperacion 
+            });
+        }
+
+        [HttpPost("restablecer")]
+        public async Task<IActionResult> RestablecerPassword([FromBody] ResetPasswordDto peticion)
+        {
+            var usuario = await _context.Usuarios.FirstOrDefaultAsync(u => u.TokenRecuperacion == peticion.Token);
+    
+            if (usuario == null || usuario.TokenExpiracion < DateTime.UtcNow)
+                return BadRequest(new { mensaje = "El enlace de recuperación es inválido o ha expirado." });
+
+            // Actualizamos la contraseña y destruimos el token
+            usuario.Password = peticion.NuevaPassword;
+            usuario.TokenRecuperacion = null;
+            usuario.TokenExpiracion = null;
+    
+            // Si la cuenta estaba bloqueada (HU-01), al cambiar la clave la desbloqueamos
+            usuario.IntentosFallidos = 0;
+            usuario.BloqueoHasta = null;
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { mensaje = "Contraseña actualizada correctamente." });
+        }
     }
 }

@@ -319,6 +319,12 @@ namespace MymContratistas.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<DateTime?>("TokenExpiracion")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TokenRecuperacion")
+                        .HasColumnType("text");
+
                     b.HasKey("Id");
 
                     b.ToTable("Usuarios");
