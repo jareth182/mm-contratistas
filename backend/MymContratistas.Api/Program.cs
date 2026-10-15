@@ -1,6 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using MymContratistas.Api.Data;
 
+// Carga el archivo .env (si existe) antes de construir la configuración
+DotNetEnv.Env.TraversePath().Load();
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
