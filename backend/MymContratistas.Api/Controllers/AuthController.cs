@@ -7,7 +7,8 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using MymContratistas.Api.Services;
-using System.Net.Mail;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace MymContratistas.Api.Controllers
 {
@@ -21,12 +22,19 @@ namespace MymContratistas.Api.Controllers
         private readonly ApplicationDbContext _context;
         private readonly IPasswordHasher<Usuario> _hasher;
         private readonly TokenService _tokens;
+        private readonly IEmailService _email;
+        private readonly IConfiguration _config;
+        private readonly ILogger<AuthController> _logger;
 
-        public AuthController(ApplicationDbContext context, IPasswordHasher<Usuario> hasher, TokenService tokens)
+        public AuthController(ApplicationDbContext context, IPasswordHasher<Usuario> hasher, TokenService tokens,
+            IEmailService email, IConfiguration config, ILogger<AuthController> logger)
         {
             _context = context;
             _hasher = hasher;
             _tokens = tokens;
+            _email = email;
+            _config = config;
+            _logger = logger;
         }
 
         private object RespuestaSesion(Usuario usuario)
@@ -116,79 +124,89 @@ namespace MymContratistas.Api.Controllers
             return usuario is { Estado: "Activo" } ? usuario : null;
         }
 
+        private const string MensajeRecuperacion = "Si el correo se encuentra registrado, recibirá un enlace de recuperación en los próximos minutos.";
+        private const int HorasVigenciaEnlace = 24;
+        public const int LongitudMinimaPassword = 8;
+
+        private static string HashToken(string token) =>
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+
+        // Responde siempre lo mismo para no revelar si el correo existe
         [AllowAnonymous]
         [HttpPost("recuperar")]
         public async Task<IActionResult> RecuperarPassword([FromBody] RecuperarDto peticion)
         {
-            var usuario = await _context.Usuarios.FirstOrDefaultAsync(u => u.Correo == peticion.Correo);
-    
-            if (usuario == null) 
-                return Ok(new { mensaje = "Si el correo se encuentra registrado, recibirá un enlace de recuperación en los próximos minutos." });
+            var correo = (peticion.Correo ?? string.Empty).Trim().ToLowerInvariant();
+            if (correo.Length == 0)
+                return BadRequest(new { mensaje = "Ingrese un correo electrónico válido." });
 
-            usuario.TokenRecuperacion = Guid.NewGuid().ToString();
-            usuario.TokenExpiracion = DateTime.UtcNow.AddHours(24);
+            var usuario = await _context.Usuarios.FirstOrDefaultAsync(u => u.Correo.ToLower() == correo);
+            if (usuario == null || usuario.Estado != "Activo")
+                return Ok(new { mensaje = MensajeRecuperacion });
+
+            var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
+                .Replace('+', '-').Replace('/', '_').TrimEnd('=');
+            usuario.TokenRecuperacion = HashToken(token);
+            usuario.TokenExpiracion = DateTime.UtcNow.AddHours(HorasVigenciaEnlace);
             await _context.SaveChangesAsync();
 
             try
             {
-                string miCorreoGmail = "jazarelly.zapata@gmail.com"; 
-                string miClaveApp = "qtdo wwup vrcy eypb"; 
-
-                // Atrapamos la ruta invisible que mandó app.js sin errores de modelo
-                string urlFrontend = Request.Headers["Frontend-Url"].FirstOrDefault() ?? "file:///C:/Users/User/Documents/DIS/mm-contratistas/frontend/index.html";
-                string enlace = $"{urlFrontend}#nueva_password?token={usuario.TokenRecuperacion}";
-
-                MailMessage correo = new MailMessage();
-                correo.From = new MailAddress(miCorreoGmail, "Soporte M/M Contratistas");
-                correo.To.Add(usuario.Correo);
-                correo.Subject = "Restablecer Contraseña - M/M Contratistas";
-                correo.IsBodyHtml = true;
-                correo.Body = $@"
-                    <div style='font-family: Arial, sans-serif; padding: 20px; color: #333;'>
-                        <h2>Recuperación de Contraseña</h2>
-                        <p>Hola {usuario.NombreCompleto},</p>
-                        <p>Has solicitado restablecer tu contraseña. Haz clic en el siguiente enlace para crear una nueva:</p>
-                        <br>
-                        <a href='{enlace}' style='background-color: #0A1929; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;'>Cambiar mi contraseña</a>
-                        <br><br>
-                        <p>Si el botón no funciona, copia y pega esta dirección en tu navegador:</p>
-                        <p style='color: #666; font-size: 12px;'>{enlace}</p>
-                        <br>
-                        <p>Este enlace expirará en 24 horas.</p>
-                    </div>";
-
-                using (SmtpClient smtp = new SmtpClient("smtp.gmail.com", 587))
-                {
-                    smtp.Credentials = new NetworkCredential(miCorreoGmail, miClaveApp);
-                    smtp.EnableSsl = true;
-                    await smtp.SendMailAsync(correo);
-                }
-
-                return Ok(new { mensaje = "Si el correo se encuentra registrado, recibirá un enlace de recuperación en los próximos minutos." });
+                var enlace = $"{_config["App:FrontendUrl"]}#nueva_password?token={token}";
+                await _email.EnviarAsync(usuario.Correo, "Restablecer contraseña - M/M Contratistas", CuerpoCorreo(usuario.NombreCompleto, enlace));
             }
             catch (Exception ex)
             {
-                Console.WriteLine("ERROR SMTP: " + ex.Message);
-                return StatusCode(500, new { mensaje = "Hubo un problema de conexión al intentar enviar el correo." });
+                _logger.LogError(ex, "No se pudo enviar el correo de recuperación");
             }
+
+            return Ok(new { mensaje = MensajeRecuperacion });
+        }
+
+        private static string CuerpoCorreo(string nombre, string enlace) => $@"
+            <div style='font-family: Arial, sans-serif; padding: 20px; color: #333;'>
+                <h2>Recuperación de contraseña</h2>
+                <p>Hola {WebUtility.HtmlEncode(nombre)},</p>
+                <p>Recibimos una solicitud para restablecer su contraseña. Haga clic en el siguiente botón para crear una nueva:</p>
+                <p><a href='{enlace}' style='background-color: #0A1929; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;'>Cambiar mi contraseña</a></p>
+                <p>Si el botón no funciona, copie y pegue esta dirección en su navegador:</p>
+                <p style='color: #666; font-size: 12px;'>{enlace}</p>
+                <p>Este enlace vence en {HorasVigenciaEnlace} horas. Si usted no lo solicitó, ignore este mensaje.</p>
+            </div>";
+
+        private Task<Usuario?> UsuarioPorToken(string? token)
+        {
+            if (string.IsNullOrWhiteSpace(token)) return Task.FromResult<Usuario?>(null);
+            var hash = HashToken(token);
+            return _context.Usuarios.FirstOrDefaultAsync(u => u.TokenRecuperacion == hash && u.TokenExpiracion > DateTime.UtcNow);
+        }
+
+        // Permite al frontend avisar antes de mostrar el formulario si el enlace venció
+        [AllowAnonymous]
+        [HttpGet("validar-token")]
+        public async Task<IActionResult> ValidarToken([FromQuery] string? token)
+        {
+            return await UsuarioPorToken(token) == null
+                ? BadRequest(new { mensaje = "El enlace de recuperación es inválido o ha expirado." })
+                : Ok();
         }
 
         [AllowAnonymous]
         [HttpPost("restablecer")]
         public async Task<IActionResult> RestablecerPassword([FromBody] ResetPasswordDto peticion)
         {
-            var usuario = await _context.Usuarios.FirstOrDefaultAsync(u => u.TokenRecuperacion == peticion.Token);
-    
-            if (usuario == null || usuario.TokenExpiracion < DateTime.UtcNow)
+            var usuario = await UsuarioPorToken(peticion.Token);
+            if (usuario == null)
                 return BadRequest(new { mensaje = "El enlace de recuperación es inválido o ha expirado." });
 
-            usuario.PasswordHash = _hasher.HashPassword(usuario, peticion.NuevaPassword);
+            if ((peticion.NuevaPassword ?? string.Empty).Length < LongitudMinimaPassword)
+                return BadRequest(new { mensaje = $"La contraseña debe tener al menos {LongitudMinimaPassword} caracteres." });
+
+            usuario.PasswordHash = _hasher.HashPassword(usuario, peticion.NuevaPassword!);
             usuario.TokenRecuperacion = null;
             usuario.TokenExpiracion = null;
-    
             usuario.IntentosFallidos = 0;
             usuario.BloqueoHasta = null;
-
             await _context.SaveChangesAsync();
 
             return Ok(new { mensaje = "Contraseña actualizada correctamente." });

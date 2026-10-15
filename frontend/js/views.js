@@ -90,26 +90,38 @@ V.login=()=>`${navbar()}
   </div></div></div>${pie()}`;
 
 V.recuperar=()=>`${navbar()}
- <div class="page" style="max-width:430px;padding-top:50px"><div class="phead"><div><h1>Recuperar Contraseña</h1>
-  <p>Ingrese su correo para enviarle un enlace de restablecimiento.</p></div></div>
-  ${ST.msg || ''} 
+ <div class="page" style="max-width:430px;padding-top:50px"><div class="phead"><div><h1>Recuperar contraseña</h1>
+  <p>Ingrese su correo y le enviaremos un enlace para crear una contraseña nueva. El enlace vence en 24 horas.</p></div>${ST.hu?'<span class="hu">HU03</span>':''}</div>
+  ${ST.msg || ''}
   <div class="card"><div class="cb">
-   <div class="f"><label>Correo electrónico</label><input id="rec_correo" placeholder="ejemplo@mym.pe"></div>
-   <button type="button" class="btn" style="width:100%" onclick="enviarEnlace()">Enviar Enlace</button>
+   <div class="f"><label>Correo electrónico</label><input id="rec_correo" type="email" placeholder="nombre@correo.com" onkeydown="if(event.key==='Enter')enviarEnlace()"></div>
+   <button type="button" class="btn" style="width:100%" onclick="enviarEnlace()">Enviar enlace</button>
    <div style="display:flex;justify-content:center;margin-top:12px">
-     <button type="button" class="btn link" onclick="go('login')">Volver al inicio</button>
+     <button type="button" class="btn link" onclick="go('login')">Volver a ingresar</button>
    </div>
   </div></div></div>${pie()}`;
 
-V.nueva_password=()=>`${navbar()}
- <div class="page" style="max-width:430px;padding-top:50px"><div class="phead"><div><h1>Nueva Contraseña</h1>
-  <p>Cree una nueva contraseña para su cuenta.</p></div></div>
+V.nueva_password=async()=>{
+  // Se valida el enlace antes de mostrar el formulario (vigente, vencido o ya usado)
+  let valido=false;
+  if(ST.token_temp){
+    try{valido=(await fetch(`${API}/api/auth/validar-token?token=${encodeURIComponent(ST.token_temp)}`)).ok}catch(e){}
+  }
+  if(!valido) return `${navbar()}
+ <div class="page" style="max-width:430px;padding-top:50px"><div class="phead"><div><h1>Nueva contraseña</h1></div></div>
+  <div class="msg bad">El enlace de recuperación es inválido o ha expirado.</div>
+  <button class="btn" onclick="go('recuperar')">Solicitar un enlace nuevo</button></div>${pie()}`;
+  return `${navbar()}
+ <div class="page" style="max-width:430px;padding-top:50px"><div class="phead"><div><h1>Nueva contraseña</h1>
+  <p>Cree una nueva contraseña para su cuenta.</p></div>${ST.hu?'<span class="hu">HU03</span>':''}</div>
+  ${ST.msg || ''}
   <div class="card"><div class="cb">
-   <input type="hidden" id="reset_token" value="${ST.token_temp || ''}">
-   <div class="f"><label>Nueva Contraseña</label><input type="password" id="reset_pass1"></div>
-   <div class="f"><label>Confirmar Contraseña</label><input type="password" id="reset_pass2"></div>
+   <div class="f"><label>Nueva contraseña</label><input type="password" id="reset_pass1" autocomplete="new-password">
+    <div class="hint" style="margin-top:4px">Mínimo 8 caracteres.</div></div>
+   <div class="f"><label>Confirmar contraseña</label><input type="password" id="reset_pass2" autocomplete="new-password" onkeydown="if(event.key==='Enter')guardarNuevaContrasena()"></div>
    <button class="btn" style="width:100%" onclick="guardarNuevaContrasena()">Guardar</button>
   </div></div></div>${pie()}`;
+};
 
 V.perfil=()=>`${navbar()}${crumbs([['Mi perfil']])}
  <div class="page" style="max-width:560px"><div class="phead"><div><h1>Mi perfil</h1>

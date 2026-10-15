@@ -746,28 +746,17 @@ async function iniciarSesion() {
 }
 
 async function enviarEnlace() {
-  const correo = document.getElementById('rec_correo').value;
-  if (!correo) return say('bad', 'Ingrese un correo electrónico válido.');
-
-  // Captura la ruta sin importar en qué computadora estés
-  const urlBase = window.location.href.split('#')[0]; 
+  const correo = document.getElementById('rec_correo').value.trim();
+  if (!correo || !correo.includes('@')) return say('bad', 'Ingrese un correo electrónico válido.');
 
   try {
-    const res = await apiFetch(API + '/api/auth/recuperar', {
+    const res = await fetch(API + '/api/auth/recuperar', {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Frontend-Url': urlBase // Lo enviamos oculto por aquí para no romper C#
-      },
-      body: JSON.stringify({ correo: correo }) 
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ correo: correo })
     });
-    
     const data = await res.json();
-    if (res.ok) {
-      say('ok', data.mensaje);
-    } else {
-      say('bad', data.mensaje);
-    }
+    say(res.ok ? 'ok' : 'bad', data.mensaje);
   } catch (e) {
     say('bad', 'Error al conectar con el servidor.');
   }
@@ -775,7 +764,6 @@ async function enviarEnlace() {
 
 async function guardarNuevaContrasena() {
   const token = ST.token_temp;
-
   const pass1 = document.getElementById('reset_pass1').value;
   const pass2 = document.getElementById('reset_pass2').value;
 
@@ -784,7 +772,7 @@ async function guardarNuevaContrasena() {
   if (pass1 !== pass2) return say('bad', 'Las contraseñas no coinciden.');
 
   try {
-    const res = await apiFetch(API + '/api/auth/restablecer', {
+    const res = await fetch(API + '/api/auth/restablecer', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: token, nuevaPassword: pass1 })
@@ -792,13 +780,15 @@ async function guardarNuevaContrasena() {
     const data = await res.json();
 
     if (res.ok) {
-      say('ok', 'Contraseña actualizada correctamente. Redirigiendo...');
-      setTimeout(() => go('login'), 2000);
+      ST.token_temp = null;
+      ST.v = 'login';
+      ST.msg = '<div class="msg ok">Contraseña actualizada correctamente. Ya puede iniciar sesión.</div>';
+      draw();
     } else {
       say('bad', data.mensaje);
     }
   } catch (e) {
-    say('bad', 'Error de conexión.');
+    say('bad', 'Error de conexión con el servidor.');
   }
 }
 
