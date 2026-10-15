@@ -30,6 +30,8 @@ namespace MymContratistas.Api.Data // <-- Aquí estaba el detalle
 
             modelBuilder.Entity<ProyectoPortafolio>()
                 .HasMany(p => p.Imagenes).WithOne(i => i.Proyecto).HasForeignKey(i => i.ProyectoPortafolioId).OnDelete(DeleteBehavior.Cascade);
+            modelBuilder.Entity<ProyectoPortafolio>()
+                .HasOne(p => p.Servicio).WithMany().HasForeignKey(p => p.ServicioId).OnDelete(DeleteBehavior.SetNull);
             modelBuilder.Entity<Cliente>().HasIndex(c => c.Documento).IsUnique();
             modelBuilder.Entity<Obra>()
                 .HasOne(o => o.ClienteRegistro).WithMany().HasForeignKey(o => o.ClienteId).OnDelete(DeleteBehavior.Restrict);

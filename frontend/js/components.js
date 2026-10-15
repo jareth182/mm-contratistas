@@ -5,7 +5,7 @@ function navbar(){
   if(P==='pub'){
     links=[['home','Proyectos'],['servicios','Servicios'],['nosotros','Nosotros']]
       .map(([v,t])=>`<button class="${ST.v===v?'on':''}" onclick="go('${v}')">${t}</button>`).join('');
-    user=`<button class="btn warn sm" style="margin-right:8px" onclick="go('cotizar')">Solicitar cotización</button>
+    user=`<button class="btn warn sm" style="margin-right:8px" onclick="cotizarServicio(null)">Solicitar cotización</button>
       <button class="btn ghost sm" style="color:#fff;border-color:#4A6072" onclick="go('login')">Ingresar</button>`;
   }else if(P==='adm'){
     const on=v=>ST.v===v?'on':'';
@@ -67,8 +67,8 @@ function pie(){
   return `<footer class="foot"><div class="foot-in">
     <div><h4>M/M Contratistas</h4>
       <p style="margin:0;max-width:40ch">Construcción de edificios, remodelación y obras civiles en Lima. Cada obra se entrega con seguimiento en línea para el cliente.</p></div>
-    <div><h4>Servicios</h4>${(ST.servicios||[]).map(s=>`<a onclick="go('servicios')">${esc(s.nombre)}</a>`).join('')}</div>
-    <div><h4>Contacto</h4><a>+51 947 258 010</a><a>zapatacontratista@hotmail.com</a><a onclick="go('cotizar')">Solicitar cotización</a><a onclick="go('login')">Acceso de clientes</a></div>
+    <div><h4>Servicios</h4>${(ST.servicios||[]).map(s=>`<a onclick="verServicioPublico(${s.id})">${esc(s.nombre)}</a>`).join('')}</div>
+    <div><h4>Contacto</h4><a>+51 947 258 010</a><a>zapatacontratista@hotmail.com</a><a onclick="cotizarServicio(null)">Solicitar cotización</a><a onclick="go('login')">Acceso de clientes</a></div>
   </div><div class="bot"><span>© 2026 M/M Contratistas S.A.C.</span><span>Prototipo académico · Grupo 6 · USMP</span></div></footer>`;
 }
 

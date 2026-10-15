@@ -32,7 +32,8 @@ async function draw(){
   guardarAcceso();
   const vista = V[ST.v] || V.home;
   document.getElementById('app').innerHTML = await vista();
-  location.hash = ST.v === 'obra-pub' && ST.proyectoPubId ? `obra-pub?id=${ST.proyectoPubId}` : ST.v;
+  location.hash = ST.v === 'obra-pub' && ST.proyectoPubId ? `obra-pub?id=${ST.proyectoPubId}`
+    : ST.v === 'servicio-pub' && ST.servicioPubId ? `servicio-pub?id=${ST.servicioPubId}` : ST.v;
   cargarImagenesProtegidas();
 }
 
@@ -1075,7 +1076,7 @@ async function cambiarEstadoUsuario(id, activar) {
 const IMAGEN_MAX_BYTES = 5 * 1024 * 1024;
 
 function nuevoProyecto() {
-  ST.formProyecto = { id: null, nombre: '', tipoObra: '', ubicacion: '', anio: new Date().getFullYear(), descripcion: '' };
+  ST.formProyecto = { id: null, nombre: '', tipoObra: '', ubicacion: '', anio: new Date().getFullYear(), descripcion: '', servicioId: '' };
   ST.msg = null;
   draw();
   setTimeout(() => { const f = document.getElementById('form_proyecto'); if (f) f.scrollIntoView({ behavior: 'smooth' }); }, 50);
@@ -1084,7 +1085,7 @@ function nuevoProyecto() {
 function editarProyecto(id) {
   const p = (ST.portafolioCache || []).find(x => x.id === id);
   if (!p) return;
-  ST.formProyecto = { id: p.id, nombre: p.nombre, tipoObra: p.tipoObra, ubicacion: p.ubicacion, anio: p.anio, descripcion: p.descripcion };
+  ST.formProyecto = { id: p.id, nombre: p.nombre, tipoObra: p.tipoObra, ubicacion: p.ubicacion, anio: p.anio, descripcion: p.descripcion, servicioId: p.servicioId ?? '' };
   ST.msg = null;
   draw();
   setTimeout(() => { const f = document.getElementById('form_proyecto'); if (f) f.scrollIntoView({ behavior: 'smooth' }); }, 50);
@@ -1104,6 +1105,7 @@ async function guardarProyecto() {
   f.ubicacion = document.getElementById('port_ubicacion').value.trim();
   f.anio = document.getElementById('port_anio').value;
   f.descripcion = document.getElementById('port_descripcion').value.trim();
+  f.servicioId = document.getElementById('port_servicio').value;
 
   if (!f.nombre) return say('bad', 'El nombre del proyecto es obligatorio.');
   if (!f.tipoObra) return say('bad', 'Seleccione el tipo de obra.');
@@ -1113,7 +1115,7 @@ async function guardarProyecto() {
     const respuesta = await apiFetch(f.id ? `${API}/api/portafolio/${f.id}` : `${API}/api/portafolio`, {
       method: f.id ? 'PUT' : 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nombre: f.nombre, tipoObra: f.tipoObra, ubicacion: f.ubicacion, anio: parseInt(f.anio), descripcion: f.descripcion })
+      body: JSON.stringify({ nombre: f.nombre, tipoObra: f.tipoObra, ubicacion: f.ubicacion, anio: parseInt(f.anio), descripcion: f.descripcion, servicioId: f.servicioId ? parseInt(f.servicioId) : null })
     });
     const data = await respuesta.json();
     if (respuesta.ok) {
@@ -1202,6 +1204,19 @@ async function eliminarImagenProyecto(imagenId) {
 }
 
 // --- PORTAFOLIO PÚBLICO (HU-05) ---
+
+// --- CATÁLOGO PÚBLICO (HU-06) ---
+
+function verServicioPublico(id) {
+  ST.servicioPubId = id;
+  go('servicio-pub');
+}
+
+// Abre la cotización con el servicio ya elegido (null = sin preselección)
+function cotizarServicio(id) {
+  ST.servicioCotizar = id;
+  go('cotizar');
+}
 
 function verProyectoPublico(id) {
   ST.proyectoPubId = id;
@@ -1372,7 +1387,10 @@ if (h.includes('?')) {
   // El token de recuperación viaja en el enlace del correo: se guarda y se limpia la URL
   const params = new URLSearchParams(h.split('?')[1]);
   if (params.get('token')) ST.token_temp = params.get('token');
-  if (params.get('id')) ST.proyectoPubId = parseInt(params.get('id'));
+  if (params.get('id')) {
+    if (h.startsWith('servicio-pub')) ST.servicioPubId = parseInt(params.get('id'));
+    else ST.proyectoPubId = parseInt(params.get('id'));
+  }
   h = h.split('?')[0];
 }
 

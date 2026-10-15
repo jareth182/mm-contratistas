@@ -29,6 +29,7 @@ namespace MymContratistas.Api.Controllers
             public string? Ubicacion { get; set; }
             public int Anio { get; set; }
             public string? Descripcion { get; set; }
+            public int? ServicioId { get; set; }
         }
 
         private static string CarpetaImagenes() => Path.Combine(Directory.GetCurrentDirectory(), "Uploads", "portafolio");
@@ -40,6 +41,10 @@ namespace MymContratistas.Api.Controllers
             if (dto.Anio < 1990 || dto.Anio > DateTime.Now.Year + 1) return "Ingrese un año de ejecución válido.";
             return null;
         }
+
+        private async Task<string?> ValidarServicio(ProyectoDto dto) =>
+            dto.ServicioId == null || await _context.Servicios.AnyAsync(s => s.Id == dto.ServicioId)
+                ? null : "Seleccione un servicio válido.";
 
         // Los bytes iniciales deben coincidir con JPG o PNG, no basta con la extensión
         private static bool EsImagenValida(byte[] inicio, string extension)
@@ -57,6 +62,7 @@ namespace MymContratistas.Api.Controllers
             ubicacion = p.Ubicacion,
             anio = p.Anio,
             descripcion = p.Descripcion,
+            servicioId = p.ServicioId,
             estado = p.Estado,
             imagenes = p.Imagenes.OrderByDescending(i => i.EsPrincipal).ThenBy(i => i.Id)
                 .Select(i => new { id = i.Id, nombre = i.NombreOriginal, esPrincipal = i.EsPrincipal }).ToList()
@@ -74,7 +80,7 @@ namespace MymContratistas.Api.Controllers
         [HttpPost]
         public async Task<IActionResult> Crear([FromBody] ProyectoDto dto)
         {
-            var error = ValidarProyecto(dto);
+            var error = ValidarProyecto(dto) ?? await ValidarServicio(dto);
             if (error != null) return BadRequest(new { mensaje = error });
 
             var proyecto = new ProyectoPortafolio
@@ -84,6 +90,7 @@ namespace MymContratistas.Api.Controllers
                 Ubicacion = (dto.Ubicacion ?? string.Empty).Trim(),
                 Anio = dto.Anio,
                 Descripcion = (dto.Descripcion ?? string.Empty).Trim(),
+                ServicioId = dto.ServicioId,
                 Estado = ProyectoPortafolio.Borrador
             };
             _context.Portafolio.Add(proyecto);
@@ -98,7 +105,7 @@ namespace MymContratistas.Api.Controllers
             var proyecto = await _context.Portafolio.Include(p => p.Imagenes).FirstOrDefaultAsync(p => p.Id == id);
             if (proyecto == null) return NotFound(new { mensaje = "El proyecto no existe." });
 
-            var error = ValidarProyecto(dto);
+            var error = ValidarProyecto(dto) ?? await ValidarServicio(dto);
             if (error != null) return BadRequest(new { mensaje = error });
 
             proyecto.Nombre = dto.Nombre!.Trim();
@@ -106,6 +113,7 @@ namespace MymContratistas.Api.Controllers
             proyecto.Ubicacion = (dto.Ubicacion ?? string.Empty).Trim();
             proyecto.Anio = dto.Anio;
             proyecto.Descripcion = (dto.Descripcion ?? string.Empty).Trim();
+            proyecto.ServicioId = dto.ServicioId;
             await _context.SaveChangesAsync();
 
             return Ok(new { mensaje = "Proyecto actualizado correctamente.", proyecto = Proyectar(proyecto) });

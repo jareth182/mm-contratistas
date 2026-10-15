@@ -16,6 +16,11 @@ namespace MymContratistas.Api.Models
         public string Descripcion { get; set; } = string.Empty;
         public string Estado { get; set; } = Borrador;
 
+        // Servicio con el que se relaciona en el sitio público (HU06)
+        public int? ServicioId { get; set; }
+        [JsonIgnore]
+        public Servicio? Servicio { get; set; }
+
         public List<ImagenProyecto> Imagenes { get; set; } = new List<ImagenProyecto>();
     }
 
