@@ -210,8 +210,9 @@ V.portafolio=async()=>{
     ST.portafolioCache=proyectos;
     filas=proyectos.map(p=>`<tr><td><b>${esc(p.nombre)}</b></td><td>${esc(p.tipoObra)}</td><td>${p.anio}</td>
      <td>${p.estado==='Publicado'?'<span class="tg ok">Publicado</span>':'<span class="tg mt">Borrador</span>'}</td>
-     <td style="width:230px;white-space:nowrap"><button class="btn link" onclick="editarProyecto(${p.id})">Editar</button> ·
-      <button class="btn link" onclick="cambiarPublicacion(${p.id},${p.estado==='Publicado'?'false':'true'})">${p.estado==='Publicado'?'Despublicar':'Publicar'}</button></td></tr>`).join('')
+     <td style="width:290px;white-space:nowrap"><button class="btn link" onclick="editarProyecto(${p.id})">Editar</button> ·
+      <button class="btn link" onclick="cambiarPublicacion(${p.id},${p.estado==='Publicado'?'false':'true'})">${p.estado==='Publicado'?'Despublicar':'Publicar'}</button> ·
+      <button class="btn link" style="color:var(--rust)" onclick="eliminarProyecto(${p.id})">Eliminar</button></td></tr>`).join('')
       ||'<tr><td colspan="5" style="text-align:center;color:var(--concrete)">Aún no hay proyectos en el portafolio.</td></tr>';
   }catch(e){
     filas='<tr><td colspan="5" style="text-align:center;color:var(--rust)">Error al cargar el portafolio desde el servidor.</td></tr>';

@@ -1139,6 +1139,23 @@ async function cambiarPublicacion(id, publicar) {
   }
 }
 
+async function eliminarProyecto(id) {
+  const p = (ST.portafolioCache || []).find(x => x.id === id);
+  if (!confirm(`¿Eliminar «${p ? p.nombre : 'este proyecto'}» y todas sus imágenes? Esta acción no se puede deshacer.`)) return;
+  try {
+    const respuesta = await apiFetch(`${API}/api/portafolio/${id}`, { method: 'DELETE' });
+    const data = await respuesta.json();
+    if (respuesta.ok) {
+      if (ST.formProyecto && ST.formProyecto.id === id) ST.formProyecto = null;
+      say('ok', data.mensaje);
+    } else if (respuesta.status !== 401) {
+      say('bad', data.mensaje || 'No se pudo eliminar el proyecto.');
+    }
+  } catch (e) {
+    say('bad', 'Error de conexión con el servidor.');
+  }
+}
+
 async function subirImagenesProyecto(id) {
   const entrada = document.getElementById('port_archivos');
   const archivos = Array.from(entrada.files);
