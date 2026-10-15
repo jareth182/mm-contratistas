@@ -3,7 +3,7 @@ ST.usuario = (sesionLeer() || {}).usuario || null;
 ST.perfil = ST.usuario ? (ST.usuario.rol === 'Cliente' ? 'cli' : 'adm') : 'pub';
 
 /* ================= control ================= */
-function go(v){ST.formUsuario=null;ST.formHito=null;ST.formProyecto=null;ST.v=v;ST.msg=null;ST.menu=null;ST.nav=false;draw();window.scrollTo({top:0})}
+function go(v){ST.formUsuario=null;ST.formHito=null;ST.formProyecto=null;ST.formObra=null;ST.finalizando=false;ST.v=v;ST.msg=null;ST.menu=null;ST.nav=false;draw();window.scrollTo({top:0})}
 function abrirObra(id){ST.obraId=id;ST.formHito=null;ST.hitoEditando=null;ST.tab='hitos';go('obra')}
 function tab(t){ST.tab=t;ST.msg=null;draw()}
 function tog(m,e){e.stopPropagation();ST.menu=ST.menu===m?null:m;draw()}
@@ -54,45 +54,196 @@ async function cargarImagenesProtegidas() {
 
 // --- OBRAS ---
 
-async function guardarObra() {
-  const nombre = document.getElementById('nuevo_nombre').value;
-  const cliente = document.getElementById('nuevo_cliente').value;
-  
-  if (!nombre || !cliente) {
-    say('bad', 'El nombre del proyecto y el cliente son obligatorios.');
-    return;
-  }
+function abrirFormularioObra() {
+  ST.formObra = { nombre: '', ubicacion: '', fechaInicio: '', fechaFin: '', descripcion: '', cliente: null };
+  ST.msg = null;
+  draw();
+  setTimeout(() => { const f = document.getElementById('form_obra'); if (f) f.scrollIntoView({ behavior: 'smooth' }); }, 50);
+}
 
-  const nuevaObra = {
-    nombre: nombre,
-    cliente: cliente,
-    estado: 'En Ejecución',
-    avancePorcentaje: 0
-  };
+function cancelarObra() {
+  ST.formObra = null;
+  ST.msg = null;
+  draw();
+}
+
+// Conserva lo escrito antes de volver a dibujar la pantalla
+function leerFormularioObra() {
+  const f = ST.formObra;
+  if (!f) return f;
+  const valor = id => { const e = document.getElementById(id); return e ? e.value : null; };
+  f.nombre = valor('nuevo_nombre') ?? f.nombre;
+  f.ubicacion = valor('nueva_ubic') ?? f.ubicacion;
+  f.fechaInicio = valor('nueva_inicio') ?? f.fechaInicio;
+  f.fechaFin = valor('nueva_fin') ?? f.fechaFin;
+  f.descripcion = valor('nueva_desc') ?? f.descripcion;
+  return f;
+}
+
+function cambiarClienteObra() {
+  leerFormularioObra();
+  ST.formObra.cliente = null;
+  draw();
+}
+
+function seleccionarClienteObra(cliente) {
+  leerFormularioObra();
+  ST.formObra.cliente = cliente;
+  draw();
+}
+
+// Búsqueda de cliente por nombre o documento: solo se actualiza la lista, para no perder el foco del campo
+let temporizadorClientes = null;
+function buscarClientes() {
+  clearTimeout(temporizadorClientes);
+  temporizadorClientes = setTimeout(async () => {
+    const entrada = document.getElementById('obra_cliente_q');
+    const caja = document.getElementById('cli_resultados');
+    if (!entrada || !caja) return;
+    const texto = entrada.value.trim();
+    if (texto.length < 2) { caja.innerHTML = ''; return; }
+    try {
+      const r = await apiFetch(`${API}/api/clientes?q=${encodeURIComponent(texto)}`);
+      if (!r.ok) throw new Error();
+      const lista = await r.json();
+      ST.resultadosClientes = lista;
+      caja.innerHTML = lista.length
+        ? `<div style="border:1px solid var(--line);background:var(--surface);max-height:190px;overflow:auto">${lista.map((c, i) =>
+            `<button class="item" style="display:block;width:100%;text-align:left;padding:7px 10px" onclick="seleccionarClienteObra(ST.resultadosClientes[${i}])">
+              <b>${esc(c.nombre)}</b><span class="sub" style="display:block">${esc(c.tipoDocumento)} ${esc(c.documento)}</span></button>`).join('')}</div>`
+        : '<div class="hint" style="margin-top:4px">Sin coincidencias. Puede registrarlo como cliente nuevo.</div>';
+    } catch (e) {
+      caja.innerHTML = '<div class="hint" style="margin-top:4px;color:var(--rust)">No se pudo buscar clientes.</div>';
+    }
+  }, 250);
+}
+
+// Ventana emergente «Registrar Nuevo Cliente»; al guardar, el cliente queda vinculado al proyecto en curso
+function abrirModalCliente() {
+  leerFormularioObra();
+  let capa = document.getElementById('modal_cliente');
+  if (!capa) {
+    capa = document.createElement('div');
+    capa.id = 'modal_cliente';
+    document.body.appendChild(capa);
+  }
+  capa.style.cssText = 'position:fixed;inset:0;background:rgba(10,25,41,.6);display:flex;align-items:center;justify-content:center;z-index:900;overflow:auto';
+  capa.innerHTML = `<div class="card" style="max-width:480px;width:92%;margin:20px"><div class="ch"><h4>Registrar nuevo cliente</h4></div><div class="cb">
+    <div id="mcli_msg"></div>
+    <div class="f"><label>Nombre o razón social</label><input id="mcli_nombre" placeholder="Inversiones Del Río S.A.C."></div>
+    <div class="g2"><div class="f"><label>Tipo de documento</label><select id="mcli_tipo"><option>RUC</option><option>DNI</option></select></div>
+     <div class="f"><label>Número de documento</label><input id="mcli_doc" inputmode="numeric" placeholder="20512345678"></div></div>
+    <div class="g2"><div class="f"><label>Correo electrónico</label><input id="mcli_correo" type="email" placeholder="contacto@empresa.pe">
+      <div class="hint" style="margin-top:4px">Con él se habilita el panel de seguimiento del cliente.</div></div>
+     <div class="f"><label>Teléfono</label><input id="mcli_tel" placeholder="987 654 321"></div></div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+     <button class="btn" onclick="guardarClienteModal()">Registrar y vincular</button>
+     <button class="btn ghost" onclick="cerrarModalCliente()">Cancelar</button></div>
+  </div></div>`;
+  setTimeout(() => { const e = document.getElementById('mcli_nombre'); if (e) e.focus(); }, 30);
+}
+
+function cerrarModalCliente() {
+  const capa = document.getElementById('modal_cliente');
+  if (capa) capa.remove();
+}
+
+async function guardarClienteModal() {
+  const aviso = texto => { document.getElementById('mcli_msg').innerHTML = `<div class="msg bad">${esc(texto)}</div>`; };
+  const nombre = document.getElementById('mcli_nombre').value.trim();
+  const tipo = document.getElementById('mcli_tipo').value;
+  const documento = document.getElementById('mcli_doc').value.trim();
+  const correo = document.getElementById('mcli_correo').value.trim();
+  const telefono = document.getElementById('mcli_tel').value.trim();
+
+  if (!nombre) return aviso('El nombre o razón social es obligatorio.');
+  if (!/^\d+$/.test(documento) || documento.length !== (tipo === 'DNI' ? 8 : 11))
+    return aviso(tipo === 'DNI' ? 'El DNI debe tener 8 dígitos.' : 'El RUC debe tener 11 dígitos.');
+  if (correo && !/^\S+@\S+\.\S+$/.test(correo)) return aviso('Ingrese un correo electrónico válido.');
+
+  try {
+    const r = await apiFetch(`${API}/api/clientes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre, tipoDocumento: tipo, documento, correo, telefono })
+    });
+    const data = await r.json();
+    if (!r.ok) return aviso(data.mensaje || 'No se pudo registrar el cliente.');
+
+    cerrarModalCliente();
+    ST.formObra.cliente = data.cliente;
+    say('ok', data.mensaje + ' Quedó vinculado al proyecto.');
+  } catch (e) {
+    aviso('Error de conexión con el servidor.');
+  }
+}
+
+async function guardarObra() {
+  const f = leerFormularioObra();
+  const nombre = f.nombre.trim();
+
+  if (!nombre) return say('bad', 'El nombre del proyecto es obligatorio.');
+  if (!f.cliente) return say('bad', 'Busque y seleccione un cliente, o registre uno nuevo.');
+  if (!f.fechaInicio) return say('bad', 'La fecha de inicio es obligatoria.');
+  if (f.fechaFin && f.fechaFin < f.fechaInicio) return say('bad', 'La fecha estimada de fin no puede ser anterior a la de inicio.');
 
   try {
     const respuesta = await apiFetch(API + '/api/obras', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(nuevaObra)
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        nombre,
+        clienteId: f.cliente.id,
+        ubicacion: f.ubicacion.trim(),
+        descripcion: f.descripcion.trim(),
+        fechaInicio: f.fechaInicio,
+        fechaFinEstimada: f.fechaFin || null
+      })
     });
+    const data = await respuesta.json();
 
     if (respuesta.ok) {
-      say('ok', 'Proyecto registrado correctamente en la base de datos.');
-      
-      document.getElementById('nuevo_nombre').value = '';
-      document.getElementById('nueva_ubic').value = '';
-      document.getElementById('nuevo_cliente').value = '';
-      
-      setTimeout(() => {
-        go('proyectos');
-      }, 1000);
-    } else {
-      say('bad', 'Ocurrió un error al guardar en la base de datos.');
+      ST.formObra = null;
+      say(data.panelHabilitado ? 'ok' : 'warn', data.mensaje);
+    } else if (respuesta.status !== 401) {
+      say('bad', data.mensaje || 'Ocurrió un error al guardar el proyecto.');
     }
   } catch (error) {
+    say('bad', 'Error de conexión con el servidor.');
+  }
+}
+
+// Cierre del proyecto con fecha real (HU11-T6)
+function abrirFinalizarObra() {
+  ST.finalizando = true;
+  ST.msg = null;
+  draw();
+}
+
+function cancelarFinalizarObra() {
+  ST.finalizando = false;
+  draw();
+}
+
+async function finalizarObra(obraId) {
+  const fecha = document.getElementById('fin_fecha').value;
+  if (!fecha) return say('bad', 'Indique la fecha real de cierre.');
+  if (!confirm('¿Finalizar la obra? Quedará marcada como Finalizada con la fecha de cierre indicada.')) return;
+
+  try {
+    const respuesta = await apiFetch(`${API}/api/obras/${obraId}/finalizar`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fechaCierre: fecha })
+    });
+    const data = await respuesta.json();
+    if (respuesta.ok) {
+      ST.finalizando = false;
+      say('ok', data.mensaje);
+    } else if (respuesta.status !== 401) {
+      say('bad', data.mensaje || 'No se pudo finalizar la obra.');
+    }
+  } catch (e) {
     say('bad', 'Error de conexión con el servidor.');
   }
 }

@@ -22,6 +22,40 @@ namespace MymContratistas.Api.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("MymContratistas.Api.Models.Cliente", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Correo")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Documento")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Telefono")
+                        .HasColumnType("text");
+
+                    b.Property<string>("TipoDocumento")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Documento")
+                        .IsUnique();
+
+                    b.ToTable("Clientes");
+                });
+
             modelBuilder.Entity("MymContratistas.Api.Models.Colaborador", b =>
                 {
                     b.Property<int>("Id")
@@ -239,15 +273,37 @@ namespace MymContratistas.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<int?>("ClienteId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Descripcion")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<string>("Estado")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<DateOnly?>("FechaCierre")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("FechaFinEstimada")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("FechaInicio")
+                        .HasColumnType("date");
 
                     b.Property<string>("Nombre")
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("Ubicacion")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("ClienteId");
 
                     b.ToTable("Obras");
                 });
@@ -410,6 +466,9 @@ namespace MymContratistas.Api.Migrations
                     b.Property<DateTime?>("BloqueoHasta")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int?>("ClienteId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Correo")
                         .IsRequired()
                         .HasColumnType("text");
@@ -439,6 +498,8 @@ namespace MymContratistas.Api.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ClienteId");
 
                     b.HasIndex("Correo")
                         .IsUnique();
@@ -501,6 +562,16 @@ namespace MymContratistas.Api.Migrations
                     b.Navigation("Proyecto");
                 });
 
+            modelBuilder.Entity("MymContratistas.Api.Models.Obra", b =>
+                {
+                    b.HasOne("MymContratistas.Api.Models.Cliente", "ClienteRegistro")
+                        .WithMany()
+                        .HasForeignKey("ClienteId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ClienteRegistro");
+                });
+
             modelBuilder.Entity("MymContratistas.Api.Models.Pago", b =>
                 {
                     b.HasOne("MymContratistas.Api.Models.Obra", "Obra")
@@ -525,6 +596,11 @@ namespace MymContratistas.Api.Migrations
 
             modelBuilder.Entity("MymContratistas.Api.Models.Usuario", b =>
                 {
+                    b.HasOne("MymContratistas.Api.Models.Cliente", null)
+                        .WithMany()
+                        .HasForeignKey("ClienteId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("MymContratistas.Api.Models.Rol", "Rol")
                         .WithMany()
                         .HasForeignKey("RolId")

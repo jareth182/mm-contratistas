@@ -1,4 +1,3 @@
-using System.Net;
 using System.Net.Mail;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
@@ -16,22 +15,16 @@ namespace MymContratistas.Api.Controllers
     [Authorize(Roles = NombresRol.Administrador)]
     public class UsuariosController : ControllerBase
     {
-        private const int HorasVigenciaInvitacion = 72;
-
         private readonly ApplicationDbContext _context;
         private readonly IPasswordHasher<Usuario> _hasher;
-        private readonly IEmailService _email;
-        private readonly IConfiguration _config;
-        private readonly ILogger<UsuariosController> _logger;
+        private readonly InvitacionService _invitacion;
 
         public UsuariosController(ApplicationDbContext context, IPasswordHasher<Usuario> hasher,
-            IEmailService email, IConfiguration config, ILogger<UsuariosController> logger)
+            InvitacionService invitacion)
         {
             _context = context;
             _hasher = hasher;
-            _email = email;
-            _config = config;
-            _logger = logger;
+            _invitacion = invitacion;
         }
 
         public class UsuarioDto
@@ -101,23 +94,13 @@ namespace MymContratistas.Api.Controllers
             var usuario = new Usuario { Nombres = nombres, Apellidos = apellidos, Correo = correo, RolId = dto.RolId };
             // Contraseña aleatoria inutilizable: la persona define la suya con el enlace del correo
             usuario.PasswordHash = _hasher.HashPassword(usuario, Convert.ToBase64String(Guid.NewGuid().ToByteArray()) + Guid.NewGuid());
-            var token = EnlaceTokens.Generar(usuario, TimeSpan.FromHours(HorasVigenciaInvitacion));
+            var token = EnlaceTokens.Generar(usuario, TimeSpan.FromHours(InvitacionService.HorasVigencia));
 
             _context.Usuarios.Add(usuario);
             await _context.SaveChangesAsync();
             await _context.Entry(usuario).Reference(u => u.Rol).LoadAsync();
 
-            var correoEnviado = true;
-            try
-            {
-                var enlace = $"{_config["App:FrontendUrl"]}#nueva_password?token={token}";
-                await _email.EnviarAsync(usuario.Correo, "Bienvenido a M/M Contratistas - defina su contraseña", CuerpoInvitacion(usuario, enlace));
-            }
-            catch (Exception ex)
-            {
-                correoEnviado = false;
-                _logger.LogError(ex, "No se pudo enviar la invitación a {Correo}", usuario.Correo);
-            }
+            var correoEnviado = await _invitacion.EnviarAsync(usuario, token);
 
             var mensaje = correoEnviado
                 ? "Usuario registrado correctamente. Se envió el enlace para definir la contraseña."
@@ -177,16 +160,5 @@ namespace MymContratistas.Api.Controllers
                 usuario = Proyectar(usuario)
             });
         }
-
-        private static string CuerpoInvitacion(Usuario usuario, string enlace) => $@"
-            <div style='font-family: Arial, sans-serif; padding: 20px; color: #333;'>
-                <h2>Bienvenido a M/M Contratistas</h2>
-                <p>Hola {WebUtility.HtmlEncode(usuario.NombreCompleto)},</p>
-                <p>Se creó una cuenta para usted con el rol <b>{WebUtility.HtmlEncode(usuario.Rol.Nombre)}</b>. Haga clic en el siguiente botón para definir su contraseña:</p>
-                <p><a href='{enlace}' style='background-color: #0A1929; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;'>Definir mi contraseña</a></p>
-                <p>Si el botón no funciona, copie y pegue esta dirección en su navegador:</p>
-                <p style='color: #666; font-size: 12px;'>{enlace}</p>
-                <p>El enlace vence en {HorasVigenciaInvitacion} horas.</p>
-            </div>";
     }
 }
