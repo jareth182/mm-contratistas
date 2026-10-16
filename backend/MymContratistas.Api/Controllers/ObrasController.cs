@@ -291,7 +291,21 @@ namespace MymContratistas.Api.Controllers
             if (obra == null) return NotFound("La obra no existe.");
 
             colaborador.ObraId = obraId;
-            
+
+            // Elegido de la ficha del personal (HU10): solo colaboradores activos y con sus datos registrados
+            if (colaborador.TrabajadorId != null)
+            {
+                var trabajador = await _context.Personal.FindAsync(colaborador.TrabajadorId);
+                if (trabajador == null) return BadRequest("El colaborador no existe.");
+                if (trabajador.Estado != Trabajador.Activo) return BadRequest("El colaborador está inactivo y no puede asignarse.");
+                if (await _context.Cuadrilla.AnyAsync(c => c.ObraId == obraId && c.TrabajadorId == trabajador.Id))
+                    return BadRequest("El colaborador ya está asignado a esta obra.");
+                colaborador.NombreCompleto = trabajador.NombreCompleto;
+                colaborador.Dni = trabajador.Documento;
+                colaborador.Especialidad = trabajador.Especialidad;
+                if (colaborador.Jornal <= 0) colaborador.Jornal = trabajador.JornalDiario;
+            }
+
             // Si no viene fecha, le ponemos la de hoy
             if (string.IsNullOrEmpty(colaborador.FechaIngresoObra))
             {
