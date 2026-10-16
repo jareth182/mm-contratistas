@@ -199,3 +199,16 @@ tbody tr:hover{background:#FAFBFC}
 .adjuntos{list-style:none;margin:0 0 8px;padding:0;border:1px solid var(--line)}
 .adjuntos li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 10px;border-top:1px solid var(--line);overflow-wrap:anywhere}
 .adjuntos li:first-child{border-top:0}
+
+/* barra pública en celulares: la cotización pasa al menú desplegable */
+.nav-links .solo-movil{display:none}
+@media (max-width:520px){
+  .nav-cot{display:none}
+  .nav-links .solo-movil{display:block}
+  .brand{padding-right:8px}
+}
+
+/* tablas anchas en celulares: se desplazan dentro de su tarjeta en vez de ensanchar la página */
+@media (max-width:1000px){
+  .card{overflow-x:auto}
+}
