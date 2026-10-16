@@ -233,33 +233,85 @@ namespace MymContratistas.Api.Controllers
         }
         // POST: api/obras/{obraId}/gastos
         [HttpPost("{obraId}/gastos")]
-        public async Task<IActionResult> RegistrarGasto(int obraId, [FromForm] string fecha, [FromForm] string tipo, [FromForm] string numero, [FromForm] string concepto, [FromForm] string proveedor, [FromForm] string partidaNombre, [FromForm] decimal monto, [FromForm] IFormFile? archivo)
+        public async Task<IActionResult> RegistrarGasto(
+            int obraId,
+            [FromForm] string fecha,
+            [FromForm] string tipo,
+            [FromForm] string numero,
+            [FromForm] string concepto,
+            [FromForm] string proveedor,
+            [FromForm] string partidaNombre,
+            [FromForm] decimal monto,
+            [FromForm] IFormFile? archivo)
         {
-            var obra = await _context.Obras.FindAsync(obraId);
+            var obra = await _context.Obras
+                .Include(o => o.Partidas)
+                .FirstOrDefaultAsync(o => o.Id == obraId);
+
             if (obra == null) return NotFound("La obra no existe.");
+            if (archivo == null || archivo.Length == 0)
+            {
+                return BadRequest("Debe adjuntar la imagen o el archivo del comprobante para registrar el gasto.");
+            }
+
+            if (archivo.Length > 10 * 1024 * 1024)
+                return BadRequest("El comprobante no puede superar los 10 MB.");
+
+            var extension = Path.GetExtension(archivo.FileName).ToLowerInvariant();
+            var extensionesPermitidas = new[] { ".pdf", ".jpg", ".jpeg", ".png" };
+            if (!extensionesPermitidas.Contains(extension))
+                return BadRequest("El comprobante debe ser PDF, JPG o PNG.");
+
+            if (string.IsNullOrWhiteSpace(fecha) ||
+                string.IsNullOrWhiteSpace(tipo) ||
+                string.IsNullOrWhiteSpace(numero) ||
+                string.IsNullOrWhiteSpace(concepto) ||
+                string.IsNullOrWhiteSpace(proveedor) ||
+                string.IsNullOrWhiteSpace(partidaNombre) ||
+                monto <= 0)
+            {
+                return BadRequest("Completa todos los datos del gasto e ingresa un monto mayor a cero.");
+            }
+
+            var partidaExiste = obra.Partidas.Any(p => p.Nombre == partidaNombre);
+            if (!partidaExiste)
+                return BadRequest("La partida seleccionada no pertenece a esta obra.");
+
+            var carpeta = Path.Combine(Directory.GetCurrentDirectory(), "Uploads");
+            Directory.CreateDirectory(carpeta);
+
+            var nombreArchivo = $"{Guid.NewGuid():N}{extension}";
+            var rutaArchivo = Path.Combine(carpeta, nombreArchivo);
+            await using (var stream = System.IO.File.Create(rutaArchivo))
+            {
+                await archivo.CopyToAsync(stream);
+            }
 
             var gasto = new Gasto
             {
-                Fecha = fecha, TipoComprobante = tipo ?? "", NumeroComprobante = numero ?? "",
-                Concepto = concepto, Proveedor = proveedor ?? "", PartidaNombre = partidaNombre,
-                Monto = monto, ObraId = obraId, Estado = "Registrado"
+                Fecha = fecha,
+                TipoComprobante = tipo,
+                NumeroComprobante = numero,
+                Concepto = concepto,
+                Proveedor = proveedor,
+                PartidaNombre = partidaNombre,
+                Monto = monto,
+                ObraId = obraId,
+                Estado = "Registrado",
+                ComprobanteUrl = nombreArchivo
             };
 
-            // Si viene un archivo, lo guardamos en la carpeta Uploads
-            if (archivo != null && archivo.Length > 0)
+            _context.Gastos.Add(gasto);
+            try
             {
-                var folderPath = Path.Combine(Directory.GetCurrentDirectory(), "Uploads");
-                if (!Directory.Exists(folderPath)) Directory.CreateDirectory(folderPath);
-                var filePath = Path.Combine(folderPath, archivo.FileName);
-                using (var stream = new FileStream(filePath, FileMode.Create))
-                {
-                    await archivo.CopyToAsync(stream);
-                }
-                gasto.ComprobanteUrl = archivo.FileName;
+                await _context.SaveChangesAsync();
+            }
+            catch
+            {
+                System.IO.File.Delete(rutaArchivo);
+                throw;
             }
 
-            _context.Gastos.Add(gasto);
-            await _context.SaveChangesAsync();
             return Ok(gasto);
         }
 
@@ -277,14 +329,19 @@ namespace MymContratistas.Api.Controllers
 
         // PUT: api/obras/gastos/{id}/anular
         [HttpPut("gastos/{id}/anular")]
-        public async Task<IActionResult> AnularGasto(int id)
+        public async Task<IActionResult> AnularGasto(int id, [FromBody] AnularGastoDto solicitud)
         {
             var gasto = await _context.Gastos.FindAsync(id);
-            if (gasto == null) return NotFound();
-            
-            gasto.Estado = "Anulado"; // Al anularlo, el frontend recalculará el saldo de la partida
+            if (gasto == null) return NotFound("El gasto no existe.");
+            if (gasto.Estado == "Anulado") return Conflict("El gasto ya está anulado.");
+
+            var motivo = solicitud.Motivo.Trim();
+            if (motivo.Length < 3) return BadRequest("Ingresa un motivo de al menos 3 caracteres.");
+
+            gasto.Estado = "Anulado";
+            gasto.MotivoAnulacion = motivo;
             await _context.SaveChangesAsync();
-            return Ok();
+            return Ok(gasto);
         }
         // POST: api/obras/{obraId}/pagos
         [HttpPost("{obraId}/pagos")]

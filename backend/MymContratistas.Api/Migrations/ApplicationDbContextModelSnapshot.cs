@@ -122,6 +122,9 @@ namespace MymContratistas.Api.Migrations
                     b.Property<decimal>("Monto")
                         .HasColumnType("numeric");
 
+                    b.Property<string>("MotivoAnulacion")
+                        .HasColumnType("text");
+
                     b.Property<string>("NumeroComprobante")
                         .IsRequired()
                         .HasColumnType("text");

@@ -14,6 +14,7 @@ namespace MymContratistas.Api.Models
         public decimal Monto { get; set; }
         public string Estado { get; set; } = "Registrado"; // Registrado, Anulado
         public string? ComprobanteUrl { get; set; }
+        public string? MotivoAnulacion { get; set; }
 
         public int ObraId { get; set; }
         [JsonIgnore]
