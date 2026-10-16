@@ -4,8 +4,10 @@ function navbar(){
   let links='',user='',search='';
   if(P==='pub'){
     links=[['home','Proyectos'],['servicios','Servicios'],['nosotros','Nosotros']]
-      .map(([v,t])=>`<button class="${ST.v===v?'on':''}" onclick="go('${v}')">${t}</button>`).join('');
-    user=`<button class="btn warn sm" style="margin-right:8px" onclick="cotizarServicio(null)">Solicitar cotización</button>
+      .map(([v,t])=>`<button class="${ST.v===v?'on':''}" onclick="go('${v}')">${t}</button>`).join('')
+      // En pantallas angostas la cotización pasa al menú desplegable
+      +`<button class="solo-movil ${ST.v==='cotizar'?'on':''}" onclick="cotizarServicio(null)">Solicitar cotización</button>`;
+    user=`<button class="btn warn sm nav-cot" style="margin-right:8px" onclick="cotizarServicio(null)">Solicitar cotización</button>
       <button class="btn ghost sm" style="color:#fff;border-color:#4A6072" onclick="go('login')">Ingresar</button>`;
   }else if(P==='adm'){
     const on=v=>ST.v===v?'on':'';
