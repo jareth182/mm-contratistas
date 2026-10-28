@@ -455,6 +455,10 @@ namespace MymContratistas.Api.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("Descripcion")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<decimal>("MontoAsignado")
                         .HasColumnType("numeric");
 

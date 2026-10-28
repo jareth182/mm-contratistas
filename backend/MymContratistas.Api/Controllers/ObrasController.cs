@@ -601,18 +601,111 @@ namespace MymContratistas.Api.Controllers
 
             return Ok();
         }
+        public class PartidaDto
+        {
+            public string? Nombre { get; set; }
+            public string? Descripcion { get; set; }
+            public decimal MontoAsignado { get; set; }
+        }
+
+        public const decimal MontoMaximoPartida = 999_999_999.99m;
+
+        // Los gastos se vinculan a la partida por su nombre; los anulados también cuentan como asociados
+        private IQueryable<Gasto> GastosDe(Partida p) =>
+            _context.Gastos.Where(g => g.ObraId == p.ObraId && g.PartidaNombre == p.Nombre);
+
+        private static object Proyectar(Partida p, int gastosAsociados, decimal gastado) => new
+        {
+            id = p.Id,
+            nombre = p.Nombre,
+            descripcion = p.Descripcion,
+            montoAsignado = p.MontoAsignado,
+            gastosAsociados,
+            gastado
+        };
+
+        // Devuelve el mensaje de error o null si los datos de la partida son válidos
+        private async Task<string?> ValidarPartida(PartidaDto dto, int obraId, int? partidaId)
+        {
+            var nombre = dto.Nombre?.Trim() ?? string.Empty;
+            if (nombre.Length == 0) return "El nombre de la partida es obligatorio.";
+            if (nombre.Length > 100) return "El nombre de la partida no puede superar los 100 caracteres.";
+            if ((dto.Descripcion?.Trim().Length ?? 0) > 300) return "La descripción no puede superar los 300 caracteres.";
+            if (dto.MontoAsignado <= 0) return "El monto asignado debe ser mayor a 0.";
+            if (dto.MontoAsignado > MontoMaximoPartida) return "El monto asignado es demasiado grande.";
+
+            var existentes = await _context.Partidas.Where(p => p.ObraId == obraId && p.Id != partidaId).Select(p => p.Nombre).ToListAsync();
+            if (existentes.Any(n => string.Equals(n, nombre, StringComparison.OrdinalIgnoreCase)))
+                return "Ya existe una partida con ese nombre en la obra.";
+            return null;
+        }
+
+        // GET: api/obras/{obraId}/presupuesto
+        [HttpGet("{obraId}/presupuesto")]
+        public async Task<IActionResult> Presupuesto(int obraId)
+        {
+            if (!await _context.Obras.AnyAsync(o => o.Id == obraId)) return NotFound("La obra no existe.");
+
+            var partidas = await _context.Partidas.Where(p => p.ObraId == obraId).OrderBy(p => p.Id).ToListAsync();
+            var gastos = await _context.Gastos.Where(g => g.ObraId == obraId).ToListAsync();
+            return Ok(new
+            {
+                montoTotal = partidas.Sum(p => p.MontoAsignado),
+                partidas = partidas.Select(p =>
+                {
+                    var propios = gastos.Where(g => g.PartidaNombre == p.Nombre).ToList();
+                    return Proyectar(p, propios.Count, propios.Where(g => g.Estado != "Anulado").Sum(g => g.Monto));
+                })
+            });
+        }
+
         // POST: api/obras/{obraId}/partidas
         [HttpPost("{obraId}/partidas")]
-        public async Task<ActionResult<Partida>> AgregarPartida(int obraId, Partida partida)
+        public async Task<IActionResult> AgregarPartida(int obraId, [FromBody] PartidaDto dto)
         {
             var obra = await _context.Obras.FindAsync(obraId);
             if (obra == null) return NotFound("La obra no existe.");
 
-            partida.ObraId = obraId;
+            var error = await ValidarPartida(dto, obraId, null);
+            if (error != null) return BadRequest(error);
+
+            var partida = new Partida
+            {
+                ObraId = obraId,
+                Nombre = dto.Nombre!.Trim(),
+                Descripcion = dto.Descripcion?.Trim() ?? string.Empty,
+                MontoAsignado = dto.MontoAsignado
+            };
             _context.Partidas.Add(partida);
             await _context.SaveChangesAsync();
 
-            return Ok(partida);
+            return Ok(Proyectar(partida, 0, 0));
+        }
+
+        // PUT: api/obras/partidas/{id}
+        [HttpPut("partidas/{id}")]
+        public async Task<IActionResult> EditarPartida(int id, [FromBody] PartidaDto dto)
+        {
+            var partida = await _context.Partidas.FindAsync(id);
+            if (partida == null) return NotFound("La partida no existe.");
+
+            var error = await ValidarPartida(dto, partida.ObraId, id);
+            if (error != null) return BadRequest(error);
+
+            var gastos = await GastosDe(partida).ToListAsync();
+            var gastado = gastos.Where(g => g.Estado != "Anulado").Sum(g => g.Monto);
+            if (dto.MontoAsignado < gastado)
+                return BadRequest($"El monto no puede ser menor a lo ya gastado en la partida (S/ {gastado:N2}).");
+
+            // Los gastos siguen a la partida si cambia de nombre
+            var nombre = dto.Nombre!.Trim();
+            foreach (var gasto in gastos) gasto.PartidaNombre = nombre;
+            partida.Nombre = nombre;
+            partida.Descripcion = dto.Descripcion?.Trim() ?? string.Empty;
+            partida.MontoAsignado = dto.MontoAsignado;
+            await _context.SaveChangesAsync();
+
+            return Ok(Proyectar(partida, gastos.Count, gastado));
         }
 
         // DELETE: api/obras/partidas/{id}
@@ -620,28 +713,18 @@ namespace MymContratistas.Api.Controllers
         public async Task<IActionResult> EliminarPartida(int id)
         {
             var partida = await _context.Partidas.FindAsync(id);
-            if (partida == null) return NotFound();
+            if (partida == null) return NotFound("La partida no existe.");
+
+            var gastos = await GastosDe(partida).CountAsync();
+            if (gastos > 0)
+                return BadRequest($"No se puede eliminar la partida «{partida.Nombre}»: tiene {gastos} gasto(s) asociado(s).");
 
             _context.Partidas.Remove(partida);
             await _context.SaveChangesAsync();
 
             return Ok();
-            
         }
-        // PUT: api/obras/partidas/{id}
-        [HttpPut("partidas/{id}")]
-        public async Task<IActionResult> EditarPartida(int id, Partida partidaActualizada)
-        {
-            var partida = await _context.Partidas.FindAsync(id);
-            if (partida == null) return NotFound("La partida no existe.");
 
-            // Actualizamos los datos
-            partida.Nombre = partidaActualizada.Nombre;
-            partida.MontoAsignado = partidaActualizada.MontoAsignado;
-            
-            await _context.SaveChangesAsync();
-            return Ok(partida);
-        }
         // POST: api/obras/{obraId}/gastos
         [HttpPost("{obraId}/gastos")]
         public async Task<IActionResult> RegistrarGasto(int obraId, [FromForm] string fecha, [FromForm] string tipo, [FromForm] string numero, [FromForm] string concepto, [FromForm] string proveedor, [FromForm] string partidaNombre, [FromForm] decimal monto, [FromForm] IFormFile? archivo)
