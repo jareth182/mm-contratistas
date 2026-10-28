@@ -25,13 +25,7 @@ namespace MymContratistas.Api.Controllers
         [HttpGet("obras")]
         public async Task<IActionResult> MisObras()
         {
-            var nombre = (User.FindFirstValue(ClaimTypes.Name) ?? string.Empty).Trim().ToLower();
-            int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var usuarioId);
-            var clienteId = await _context.Usuarios.Where(u => u.Id == usuarioId).Select(u => u.ClienteId).FirstOrDefaultAsync();
-
-            var obras = await _context.Obras
-                .Where(o => (clienteId != null && o.ClienteId == clienteId)
-                         || (o.ClienteId == null && o.Cliente.Trim().ToLower() == nombre))
+            var obras = await (await ObrasDelClienteAsync())
                 .Select(o => new
                 {
                     o.Id,
@@ -39,6 +33,9 @@ namespace MymContratistas.Api.Controllers
                     o.Cliente,
                     o.Estado,
                     o.AvancePorcentaje,
+                    // Solo los documentos que el equipo marcó como visibles para el cliente (HU15)
+                    Documentos = o.Documentos.Where(d => d.VisibleCliente).OrderByDescending(d => d.Id)
+                        .Select(d => new { d.Id, d.Nombre, d.Clasificacion, d.FechaCarga }),
                     Hitos = o.Hitos.OrderBy(h => h.Orden).Select(h => new
                     {
                         h.Id, h.Orden, h.Nombre, h.Peso, h.Estado, h.AvancePorcentaje, h.FechaPlanificada, h.FechaReal
@@ -46,6 +43,31 @@ namespace MymContratistas.Api.Controllers
                 })
                 .ToListAsync();
             return Ok(obras);
+        }
+
+        // GET: api/cliente/documentos/{id}/descargar
+        [HttpGet("documentos/{id}/descargar")]
+        public async Task<IActionResult> DescargarDocumento(int id)
+        {
+            var doc = await _context.Documentos.FirstOrDefaultAsync(d => d.Id == id && d.VisibleCliente);
+            if (doc == null || !await (await ObrasDelClienteAsync()).AnyAsync(o => o.Id == doc.ObraId))
+                return NotFound("Documento no encontrado.");
+
+            var ruta = ObrasController.RutaDocumento(doc);
+            if (!System.IO.File.Exists(ruta)) return NotFound("El archivo físico no se encontró.");
+
+            return PhysicalFile(ruta, ObrasController.TipoContenido(doc.Nombre), doc.Nombre);
+        }
+
+        // La obra se vincula por la ficha de cliente de la cuenta; las anteriores, por el nombre del cliente
+        private async Task<IQueryable<Obra>> ObrasDelClienteAsync()
+        {
+            var nombre = (User?.FindFirstValue(ClaimTypes.Name) ?? string.Empty).Trim().ToLower();
+            int.TryParse(User?.FindFirstValue(ClaimTypes.NameIdentifier), out var usuarioId);
+            var clienteId = await _context.Usuarios.Where(u => u.Id == usuarioId).Select(u => u.ClienteId).FirstOrDefaultAsync();
+
+            return _context.Obras.Where(o => (clienteId != null && o.ClienteId == clienteId)
+                                          || (o.ClienteId == null && o.Cliente.Trim().ToLower() == nombre));
         }
     }
 }
