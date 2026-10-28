@@ -4,7 +4,7 @@ ST.perfil = ST.usuario ? (ST.usuario.rol === 'Cliente' ? 'cli' : 'adm') : 'pub';
 
 /* ================= control ================= */
 function go(v){ST.formUsuario=null;ST.formTrabajador=null;ST.formServicio=null;ST.formHito=null;ST.formProyecto=null;ST.formObra=null;ST.finalizando=false;ST.v=v;ST.msg=null;ST.menu=null;ST.nav=false;draw();window.scrollTo({top:0})}
-function abrirObra(id){ST.obraId=id;ST.formHito=null;ST.hitoEditando=null;ST.tab='hitos';go('obra')}
+function abrirObra(id){ST.obraId=id;ST.formHito=null;ST.hitoEditando=null;ST.registrandoAvance=false;ST.formAvance=null;ST.tab='hitos';go('obra')}
 function tab(t){ST.tab=t;ST.msg=null;draw()}
 function tog(m,e){e.stopPropagation();ST.menu=ST.menu===m?null:m;draw()}
 function say(t,x){ST.msg=`<div class="msg ${t}">${x}</div>`;draw();
@@ -37,19 +37,25 @@ async function draw(){
   cargarImagenesProtegidas();
 }
 
-// Las imágenes del portafolio exigen sesión: no pueden ir directo en un <img src>, se piden con el token
+// Las imágenes del portafolio y las fotos de avance exigen sesión: no pueden ir directo en un <img src>, se piden con el token
 const imagenesCargadas = new Map();
 async function cargarImagenesProtegidas() {
-  for (const img of document.querySelectorAll('img[data-img-id]')) {
-    const id = img.dataset.imgId;
-    try {
-      if (!imagenesCargadas.has(id)) {
-        const r = await apiFetch(`${API}/api/portafolio/imagenes/${id}`);
-        if (!r.ok) continue;
-        imagenesCargadas.set(id, URL.createObjectURL(await r.blob()));
-      }
-      img.src = imagenesCargadas.get(id);
-    } catch (e) { /* la miniatura queda vacía */ }
+  const origenes = [
+    ['img[data-img-id]', 'imgId', id => `${API}/api/portafolio/imagenes/${id}`, 'p'],
+    ['img[data-foto-avance]', 'fotoAvance', id => `${API}/api/obras/avances/fotos/${id}`, 'a']
+  ];
+  for (const [selector, atributo, urlDe, prefijo] of origenes) {
+    for (const img of document.querySelectorAll(selector)) {
+      const clave = prefijo + img.dataset[atributo];
+      try {
+        if (!imagenesCargadas.has(clave)) {
+          const r = await apiFetch(urlDe(img.dataset[atributo]));
+          if (!r.ok) continue;
+          imagenesCargadas.set(clave, URL.createObjectURL(await r.blob()));
+        }
+        img.src = imagenesCargadas.get(clave);
+      } catch (e) { /* la miniatura queda vacía */ }
+    }
   }
 }
 
@@ -322,50 +328,74 @@ async function eliminarHito(id) {
 
 function seleccionarHito(id) {
   ST.hitoEditando = id;
+  ST.registrandoAvance = false;
+  ST.formAvance = null;
   draw();
-  setTimeout(() => {
-    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-  }, 100);
+  setTimeout(() => { const el = document.getElementById('detalle_hito'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }, 100);
 }
 
-async function actualizarAvanceDesdeFormulario(hitoId) {
-  if (!hitoId) return;
+function cerrarDetalleHito() {
+  ST.hitoEditando = null;
+  ST.registrandoAvance = false;
+  ST.formAvance = null;
+  draw();
+}
 
-  const entrada = document.getElementById('avance_porcentaje').value;
-  const descripcion = document.getElementById('avance_descripcion').value;
-  const fotoInput = document.getElementById('avance_foto');
-  
-  let nuevoAvance = parseInt(entrada);
-  
-  if (isNaN(nuevoAvance) || nuevoAvance < 0 || nuevoAvance > 100) {
-    say('bad', 'Por favor, ingrese un número válido entre 0 y 100 en el formulario.');
-    return;
+function abrirFormularioAvance() {
+  ST.registrandoAvance = true;
+  ST.formAvance = null;
+  draw();
+  setTimeout(() => { const el = document.getElementById('form_avance'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }, 100);
+}
+
+function cancelarAvance() {
+  ST.registrandoAvance = false;
+  ST.formAvance = null;
+  draw();
+}
+
+function mostrarFotosAvance(input) {
+  document.getElementById('avance_nombres').innerText = Array.from(input.files).map(f => f.name).join(', ');
+}
+
+function ampliarFotoAvance(img) {
+  if (img.src) window.open(img.src, '_blank');
+}
+
+// Los errores se muestran en el propio formulario para no perder lo escrito ni las fotos elegidas
+async function guardarAvance(hitoId) {
+  const error = texto => { document.getElementById('avance_error').innerHTML = `<div class="msg bad">${esc(texto)}</div>`; };
+  const hito = (ST.hitosCache || []).find(h => h.id === hitoId);
+  const porcentaje = parseInt(document.getElementById('avance_porcentaje').value, 10);
+  const descripcion = document.getElementById('avance_descripcion').value.trim();
+  const fotos = Array.from(document.getElementById('avance_fotos').files);
+
+  if (isNaN(porcentaje) || porcentaje < 1 || porcentaje > 100) return error('Ingrese un porcentaje de avance entre 1 y 100.');
+  if (hito && porcentaje <= hito.avancePorcentaje) return error(`El porcentaje debe ser mayor al avance actual del hito (${hito.avancePorcentaje}%).`);
+  if (!descripcion) return error('La descripción del trabajo realizado es obligatoria.');
+  if (fotos.length > 5) return error('Solo puede adjuntar hasta 5 fotografías por avance.');
+  for (const foto of fotos) {
+    if (!/\.(jpe?g|png)$/i.test(foto.name)) return error(`«${foto.name}» no es una imagen JPG o PNG.`);
+    if (foto.size > 5 * 1024 * 1024) return error(`«${foto.name}» supera el tamaño máximo de 5 MB.`);
   }
 
-  const formData = new FormData();
-  formData.append("nuevoAvance", nuevoAvance);
-  formData.append("descripcion", descripcion);
-  
-  if (fotoInput.files.length > 0) {
-    formData.append("foto", fotoInput.files[0]);
-  }
+  const formulario = new FormData();
+  formulario.append('porcentaje', porcentaje);
+  formulario.append('descripcion', descripcion);
+  fotos.forEach(foto => formulario.append('fotos', foto));
 
   try {
-    const respuesta = await apiFetch(`${API}/api/obras/hitos/${hitoId}`, {
-      method: 'PUT',
-      body: formData 
-    });
-
+    const respuesta = await apiFetch(`${API}/api/obras/hitos/${hitoId}/avances`, { method: 'POST', body: formulario });
     if (respuesta.ok) {
-      say('ok', 'El avance y los archivos se guardaron correctamente.');
-      ST.hitoEditando = null;
-      draw();
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else {
-      say('bad', 'Ocurrió un error al guardar los archivos en el servidor.');
+      const datos = await respuesta.json();
+      ST.registrandoAvance = false;
+      ST.formAvance = null;
+      say('ok', esc(datos.mensaje));
+    } else if (respuesta.status !== 401) {
+      error((await respuesta.text()) || 'Ocurrió un error al guardar el avance.');
     }
-  } catch (error) {
-    say('bad', 'Error de conexión con el servidor.');
+  } catch (e) {
+    error('Error de conexión con el servidor.');
   }
 }
 

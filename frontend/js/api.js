@@ -74,3 +74,11 @@ function fmtFecha(iso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
   return m ? `${m[3]}/${m[2]}/${m[1]}` : '—';
 }
+
+// 2026-10-28T14:05:00Z -> 28/10/2026 09:05 (hora local)
+function fmtFechaHora(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return '—';
+  return d.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' '
+    + d.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: false });
+}

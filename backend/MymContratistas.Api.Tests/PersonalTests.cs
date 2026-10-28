@@ -26,7 +26,7 @@ namespace MymContratistas.Api.Tests
         {
             _personal = new PersonalController(Db);
             var invitacion = new InvitacionService(new SinCorreo(), new ConfigurationBuilder().Build(), NullLogger<InvitacionService>.Instance);
-            _obras = new ObrasController(Db, new PasswordHasher<Usuario>(), invitacion);
+            _obras = new ObrasController(Db, new PasswordHasher<Usuario>(), invitacion, new NotificacionHitoService(new SinCorreo(), NullLogger<NotificacionHitoService>.Instance));
         }
 
         private static PersonalController.TrabajadorDto Dto(string documento = "41258963", string nombres = "Rómulo", string especialidad = "Maestro de Obra") => new()

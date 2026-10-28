@@ -27,7 +27,7 @@ namespace MymContratistas.Api.Tests
         public HitosTests()
         {
             var invitacion = new InvitacionService(new SinCorreo(), new ConfigurationBuilder().Build(), NullLogger<InvitacionService>.Instance);
-            _obras = new ObrasController(Db, new PasswordHasher<Usuario>(), invitacion);
+            _obras = new ObrasController(Db, new PasswordHasher<Usuario>(), invitacion, new NotificacionHitoService(new SinCorreo(), NullLogger<NotificacionHitoService>.Instance));
             var obra = new Obra { Nombre = "Los Cedros", Cliente = "Inversiones Del Río" };
             Db.Obras.Add(obra);
             Db.SaveChanges();
@@ -117,7 +117,7 @@ namespace MymContratistas.Api.Tests
         public async Task HitoConAvance_noSePuedeEditarNiEliminar()
         {
             var (_, hito) = await Agregar("Excavación", 40);
-            await _obras.ActualizarAvanceHito(hito!.Id, 30, "Avance", null);
+            await _obras.RegistrarAvance(hito!.Id, 30, "Avance", null);
 
             Assert.IsType<BadRequestObjectResult>(await _obras.EditarHito(hito.Id, Dto("Otro", 40)));
             Assert.IsType<BadRequestObjectResult>(await _obras.EliminarHito(hito.Id));
@@ -142,7 +142,7 @@ namespace MymContratistas.Api.Tests
         {
             var (_, hito) = await Agregar("Excavación", 10);
 
-            await _obras.ActualizarAvanceHito(hito!.Id, 100, null, null);
+            await _obras.RegistrarAvance(hito!.Id, 100, "Hito terminado", null);
 
             var guardado = (await HitosGuardados()).Single();
             Assert.Equal(("Completado", 100, DateOnly.FromDateTime(DateTime.Now)), (guardado.Estado, guardado.AvancePorcentaje, guardado.FechaReal!.Value));

@@ -561,10 +561,72 @@ V.obra = async () => {
 
 const TC={};
 
+// Detalle de un hito: datos, botón «Registrar Avance», formulario e historial de avances (HU13)
+async function detalleHito(h) {
+  let filasHistorial = '';
+  try {
+    const respuesta = await apiFetch(`${API}/api/obras/hitos/${h.id}/avances`);
+    const avances = respuesta.ok ? await respuesta.json() : [];
+    filasHistorial = avances.length ? avances.map(a => `<tr>
+        <td style="white-space:nowrap">${fmtFechaHora(a.fecha)}</td>
+        <td class="num">${a.porcentaje}%</td>
+        <td>${esc(a.descripcion)}</td>
+        <td>${esc(a.responsable)}</td>
+        <td><div class="thumbs">${a.fotos.length
+          ? a.fotos.map(f => `<img class="th" data-foto-avance="${f.id}" alt="${esc(f.nombre)}" title="${esc(f.nombre)}" style="object-fit:cover;cursor:pointer" onclick="ampliarFotoAvance(this)">`).join('')
+          : '<span class="hint">Sin fotografías</span>'}</div></td>
+      </tr>`).join('')
+      : '<tr><td colspan="5" style="text-align:center;color:var(--concrete)">Aún no se registraron avances en este hito.</td></tr>';
+  } catch (error) {
+    filasHistorial = '<tr><td colspan="5" style="text-align:center;color:var(--rust)">Error al cargar el historial de avances.</td></tr>';
+  }
+
+  const completado = h.estado === 'Completado';
+  const estado = completado ? '<span class="tg ok">Completado</span>' : h.estado === 'En proceso' ? '<span class="tg wn">En proceso</span>' : '<span class="tg mt">Pendiente</span>';
+  const hoy = new Date().toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const f = ST.formAvance || { porcentaje: '', descripcion: '' };
+
+  const formulario = `<div class="card" style="margin-top:16px" id="form_avance"><div class="ch"><h4>Registrar avance</h4></div><div class="cb">
+      <div class="g3">
+        <div class="f"><label>Porcentaje de avance (${h.avancePorcentaje + 1} a 100)</label>
+          <input id="avance_porcentaje" type="number" min="${h.avancePorcentaje + 1}" max="100" value="${esc(f.porcentaje)}"></div>
+        <div class="f"><label>Fecha</label><input value="${hoy}" disabled></div>
+        <div class="f"><label>Responsable</label><input value="${esc(ST.usuario ? ST.usuario.nombreCompleto : '')}" disabled></div>
+      </div>
+      <div class="f"><label>Descripción del trabajo realizado</label>
+        <textarea id="avance_descripcion" maxlength="1000">${esc(f.descripcion)}</textarea></div>
+      <div class="f"><label>Fotografías (JPG o PNG, hasta 5 archivos de 5 MB)</label>
+        <input type="file" id="avance_fotos" multiple accept="image/png, image/jpeg" onchange="mostrarFotosAvance(this)">
+        <span id="avance_nombres" class="hint"></span></div>
+      <div id="avance_error"></div>
+      <button class="btn sm" onclick="guardarAvance(${h.id})">Guardar avance</button>
+      <button class="btn ghost sm" style="margin-left:8px" onclick="cancelarAvance()">Cancelar</button>
+    </div></div>`;
+
+  return `<div class="card" style="margin-top:20px" id="detalle_hito">
+    <div class="ch"><h4>Detalle del hito · <span style="color:var(--safety)">${esc(h.nombre)}</span></h4>${ST.hu ? '<span class="hu">HU13</span>' : ''}</div>
+    <div class="cb">
+      <div class="g3">
+        <div class="f"><label>Estado</label>${estado}</div>
+        <div class="f"><label>Peso en la obra</label>${h.peso}%</div>
+        <div class="f"><label>Fecha planificada · real</label>${fmtFecha(h.fechaPlanificada)} · ${fmtFecha(h.fechaReal)}</div>
+      </div>
+      <div class="f"><label>Avance del hito: ${h.avancePorcentaje}%</label><div class="bar"><i style="width:${h.avancePorcentaje}%"></i></div></div>
+      ${completado ? '<p class="hint">El hito está completado y ya no admite nuevos avances.</p>'
+        : (ST.registrandoAvance ? '' : '<button class="btn sm" onclick="abrirFormularioAvance()">Registrar Avance</button>')}
+      <button class="btn ghost sm" style="margin-left:8px" onclick="cerrarDetalleHito()">Cerrar detalle</button>
+      ${ST.registrandoAvance && !completado ? formulario : ''}
+      <h4 style="margin-top:22px">Historial de avances</h4>
+      <table><thead><tr><th>Fecha</th><th class="num">Avance</th><th>Descripción</th><th>Responsable</th><th>Fotografías</th></tr></thead><tbody>
+      ${filasHistorial}
+      </tbody></table>
+    </div>
+  </div>`;
+}
+
 TC.hitos = async () => {
   let filas = '';
-  let nombreHitoSeleccionado = 'Seleccione un hito de la tabla';
-  let idHitoSeleccionado = null;
+  let detalle = '';
   let lineaDeTiempo = '';
   let resumenPesos = '';
   let hitosReales = [];
@@ -590,10 +652,6 @@ TC.hitos = async () => {
       lineaDeTiempo = elevHitos(hitosReales);
 
       filas = hitosReales.map(h => {
-        if (ST.hitoEditando && ST.hitoEditando === h.id) {
-            nombreHitoSeleccionado = h.nombre;
-            idHitoSeleccionado = h.id;
-        }
         const pendiente = h.estado === 'Pendiente' && h.avancePorcentaje === 0;
 
         return `<tr>
@@ -607,10 +665,13 @@ TC.hitos = async () => {
           <td style="white-space:nowrap;width:260px">
             ${pendiente ? `<button class="btn link" onclick="editarHito(${h.id})">Editar</button> ·
             <button class="btn link" onclick="eliminarHito(${h.id})">Eliminar</button> · ` : ''}
-            ${h.avancePorcentaje < 100 ? `<button class="btn link" onclick="seleccionarHito(${h.id})">Registrar avance</button>` : '<span class="hint">—</span>'}
+            <button class="btn link" onclick="seleccionarHito(${h.id})">Ver detalle</button>
           </td>
         </tr>`;
       }).join('');
+
+      const seleccionado = hitosReales.find(h => h.id === ST.hitoEditando);
+      if (seleccionado) detalle = await detalleHito(seleccionado);
     }
   } catch (error) {
     filas = `<tr><td colspan="8" style="text-align:center;color:var(--rust)">Error al cargar los hitos desde el servidor.</td></tr>`;
@@ -635,39 +696,7 @@ TC.hitos = async () => {
    ${filas}
    </tbody></table></div>
 
-   <div class="card" style="margin-top:20px">
-    <div class="ch">
-      <h4>Registrar avance · <span style="color:var(--safety)">${esc(nombreHitoSeleccionado)}</span></h4>
-      ${ST.hu?'<span class="hu">HU13</span>':''}
-    </div>
-    <div class="cb">
-      <div class="g2">
-        <div class="f">
-          <label>Porcentaje de avance (0 a 100)</label>
-          <input id="avance_porcentaje" type="number" value="0" ${!idHitoSeleccionado ? 'disabled' : ''}>
-        </div>
-        <div class="f">
-          <label>Fecha</label>
-          <input value="14/09/2026" ${!idHitoSeleccionado ? 'disabled' : ''}>
-        </div>
-      </div>
-      <div class="f">
-        <label>Descripción del trabajo realizado</label>
-        <textarea id="avance_descripcion" ${!idHitoSeleccionado ? 'disabled' : ''}></textarea>
-      </div>
-      <div class="f">
-        <label>Fotografías</label>
-        <div class="thumbs">
-          <input type="file" id="avance_foto" style="display:none" accept="image/png, image/jpeg" onchange="document.getElementById('nombre_foto').innerText = this.files[0] ? this.files[0].name : ''">
-          <button class="btn ghost sm" onclick="document.getElementById('avance_foto').click()" ${!idHitoSeleccionado ? 'disabled' : ''}>Adjuntar fotografías</button>
-          <span id="nombre_foto" class="hint" style="margin-left: 10px;"></span>
-        </div>
-      </div>
-      <button class="btn" onclick="actualizarAvanceDesdeFormulario(${idHitoSeleccionado})" ${!idHitoSeleccionado ? 'disabled' : ''}>
-        Guardar avance
-      </button>
-    </div>
-   </div>
+   ${detalle}
    <p class="hint" style="margin-top:14px">Solo se pueden editar o eliminar los hitos pendientes, sin avances registrados.</p>`;
 };
 
