@@ -12,6 +12,10 @@ namespace MymContratistas.Api.Models
         public string EstadoSctr { get; set; } = "Vigente"; // Vigente, Por vencer, Vencido
         public string FechaIngresoObra { get; set; } = string.Empty;
 
+        // Mientras no tenga fecha de salida, el colaborador sigue activo en la cuadrilla (HU14)
+        public DateOnly? FechaSalida { get; set; }
+        public string Estado => FechaSalida == null ? "Activo" : "Retirado";
+
         // Ficha del personal (HU10); permite conservar su historial de obras
         public int? TrabajadorId { get; set; }
         [JsonIgnore]

@@ -145,6 +145,58 @@ namespace MymContratistas.Api.Controllers
             });
         }
 
+        public class VigenciaDto
+        {
+            public string? Tipo { get; set; }
+            public DateOnly? FechaInicio { get; set; }
+            public DateOnly? FechaVencimiento { get; set; }
+        }
+
+        private static object Proyectar(VigenciaDocumento v, DateOnly hoy) => new
+        {
+            id = v.Id,
+            tipo = v.Tipo,
+            fechaInicio = v.FechaInicio,
+            fechaVencimiento = v.FechaVencimiento,
+            estado = VigenciaDocumento.EstadoAl(v.FechaVencimiento, hoy)
+        };
+
+        // POST: api/personal/{id}/vigencias  — registra o renueva el SCTR o el examen médico; las anteriores quedan en el historial
+        [HttpPost("{id}/vigencias")]
+        public async Task<IActionResult> RegistrarVigencia(int id, [FromBody] VigenciaDto dto)
+        {
+            if (!await _context.Personal.AnyAsync(t => t.Id == id)) return NotFound(new { mensaje = "El colaborador no existe." });
+
+            var tipo = VigenciaDocumento.Tipos.FirstOrDefault(t => string.Equals(t, dto.Tipo?.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (tipo == null) return BadRequest(new { mensaje = "Seleccione el documento: SCTR o Examen Médico." });
+            if (dto.FechaInicio == null || dto.FechaVencimiento == null) return BadRequest(new { mensaje = "Ingrese las fechas de inicio y de vencimiento." });
+            if (dto.FechaVencimiento <= dto.FechaInicio) return BadRequest(new { mensaje = "El vencimiento debe ser posterior al inicio de la vigencia." });
+
+            var vigencia = new VigenciaDocumento
+            {
+                TrabajadorId = id,
+                Tipo = tipo,
+                FechaInicio = dto.FechaInicio.Value,
+                FechaVencimiento = dto.FechaVencimiento.Value,
+                FechaRegistro = DateTime.UtcNow
+            };
+            _context.Vigencias.Add(vigencia);
+            await _context.SaveChangesAsync();
+            return StatusCode(201, new { mensaje = $"{tipo} registrado correctamente.", vigencia = Proyectar(vigencia, DateOnly.FromDateTime(DateTime.Now)) });
+        }
+
+        // GET: api/personal/{id}/vigencias  — historial, de la más reciente a la más antigua
+        [HttpGet("{id}/vigencias")]
+        public async Task<IActionResult> Vigencias(int id)
+        {
+            if (!await _context.Personal.AnyAsync(t => t.Id == id)) return NotFound(new { mensaje = "El colaborador no existe." });
+
+            var hoy = DateOnly.FromDateTime(DateTime.Now);
+            var vigencias = await _context.Vigencias.Where(v => v.TrabajadorId == id)
+                .OrderByDescending(v => v.FechaVencimiento).ThenByDescending(v => v.Id).ToListAsync();
+            return Ok(vigencias.Select(v => Proyectar(v, hoy)));
+        }
+
         // GET: api/personal/{id}/historial  — obras en las que fue asignado
         [HttpGet("{id}/historial")]
         public async Task<IActionResult> Historial(int id)
@@ -161,7 +213,8 @@ namespace MymContratistas.Api.Controllers
                     estadoObra = c.Obra != null ? c.Obra.Estado : "",
                     especialidad = c.Especialidad,
                     jornal = c.Jornal,
-                    fechaIngreso = c.FechaIngresoObra
+                    fechaIngreso = c.FechaIngresoObra,
+                    fechaSalida = c.FechaSalida
                 })
                 .ToListAsync();
             return Ok(historial);

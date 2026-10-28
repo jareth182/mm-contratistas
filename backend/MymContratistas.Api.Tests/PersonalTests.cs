@@ -48,6 +48,14 @@ namespace MymContratistas.Api.Tests
 
         private async Task<int> Asignar(int obraId, int trabajadorId)
         {
+            // La asignación exige SCTR y examen médico vigentes (HU14)
+            if (!await Db.Vigencias.AnyAsync(v => v.TrabajadorId == trabajadorId))
+            {
+                var hoy = DateOnly.FromDateTime(DateTime.Now);
+                foreach (var tipo in VigenciaDocumento.Tipos)
+                    Db.Vigencias.Add(new VigenciaDocumento { TrabajadorId = trabajadorId, Tipo = tipo, FechaInicio = hoy.AddMonths(-1), FechaVencimiento = hoy.AddMonths(6) });
+                await Db.SaveChangesAsync();
+            }
             var r = await _obras.AsignarColaborador(obraId, new Colaborador { TrabajadorId = trabajadorId });
             return r.Result switch { OkObjectResult => 200, BadRequestObjectResult => 400, NotFoundObjectResult => 404, _ => 500 };
         }

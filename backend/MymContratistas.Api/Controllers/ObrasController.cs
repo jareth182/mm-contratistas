@@ -372,53 +372,118 @@ namespace MymContratistas.Api.Controllers
             return PhysicalFile(ruta, Path.GetExtension(foto.Archivo) == ".png" ? "image/png" : "image/jpeg");
         }
 
+        public class SalidaDto
+        {
+            public DateOnly? FechaSalida { get; set; }
+        }
+
+        private static readonly string[] FormatosFecha = { "dd/MM/yyyy", "d/M/yyyy" };
+
+        private static DateOnly? FechaIngreso(Colaborador c) =>
+            DateOnly.TryParseExact(c.FechaIngresoObra, FormatosFecha, null, System.Globalization.DateTimeStyles.None, out var f) ? f : null;
+
+        // GET: api/obras/{obraId}/cuadrilla/disponibles?buscar=  (personal activo que aún no está en la cuadrilla de la obra)
+        [HttpGet("{obraId}/cuadrilla/disponibles")]
+        public async Task<IActionResult> ColaboradoresDisponibles(int obraId, [FromQuery] string? buscar)
+        {
+            if (!await _context.Obras.AnyAsync(o => o.Id == obraId)) return NotFound("La obra no existe.");
+
+            var enObra = await _context.Cuadrilla.Where(c => c.ObraId == obraId && c.FechaSalida == null && c.TrabajadorId != null)
+                .Select(c => c.TrabajadorId!.Value).ToListAsync();
+            var candidatos = _context.Personal.Where(t => t.Estado == Trabajador.Activo && !enObra.Contains(t.Id));
+
+            var texto = (buscar ?? string.Empty).Trim().ToLower();
+            if (texto.Length > 0)
+                candidatos = candidatos.Where(t => (t.Nombres + " " + t.Apellidos).ToLower().Contains(texto)
+                    || t.Documento.ToLower().Contains(texto) || t.Especialidad.ToLower().Contains(texto));
+
+            var lista = await candidatos.OrderBy(t => t.Apellidos).ThenBy(t => t.Nombres).ToListAsync();
+            var vigencias = await VigenciasDocumentales.UltimasAsync(_context, lista.Select(t => t.Id).ToList());
+            var hoy = DateOnly.FromDateTime(DateTime.Now);
+
+            return Ok(lista.Select(t =>
+            {
+                vigencias.TryGetValue(t.Id, out var ultimas);
+                object Documento(string tipo) => ultimas != null && ultimas.TryGetValue(tipo, out var v)
+                    ? new { estado = VigenciaDocumento.EstadoAl(v.FechaVencimiento, hoy), vencimiento = (DateOnly?)v.FechaVencimiento }
+                    : new { estado = "Sin registrar", vencimiento = (DateOnly?)null };
+                var impedimento = VigenciasDocumentales.Impedimento(t.NombreCompleto, ultimas, hoy);
+                return new
+                {
+                    id = t.Id,
+                    nombreCompleto = t.NombreCompleto,
+                    documento = t.Documento,
+                    especialidad = t.Especialidad,
+                    jornalDiario = t.JornalDiario,
+                    sctr = Documento(VigenciaDocumento.Sctr),
+                    examenMedico = Documento(VigenciaDocumento.ExamenMedico),
+                    apto = impedimento == null,
+                    motivo = impedimento
+                };
+            }));
+        }
+
         // POST: api/obras/{obraId}/cuadrilla
         [HttpPost("{obraId}/cuadrilla")]
         public async Task<ActionResult<Colaborador>> AsignarColaborador(int obraId, Colaborador colaborador)
         {
             var obra = await _context.Obras.FindAsync(obraId);
             if (obra == null) return NotFound("La obra no existe.");
-
-            colaborador.ObraId = obraId;
+            if (obra.Estado == Obra.Finalizado) return BadRequest("La obra está finalizada y no admite nuevas asignaciones.");
+            if (colaborador.TrabajadorId == null) return BadRequest("Seleccione un colaborador de la lista de personal.");
 
             // Elegido de la ficha del personal (HU10): solo colaboradores activos y con sus datos registrados
-            if (colaborador.TrabajadorId != null)
-            {
-                var trabajador = await _context.Personal.FindAsync(colaborador.TrabajadorId);
-                if (trabajador == null) return BadRequest("El colaborador no existe.");
-                if (trabajador.Estado != Trabajador.Activo) return BadRequest("El colaborador está inactivo y no puede asignarse.");
-                if (await _context.Cuadrilla.AnyAsync(c => c.ObraId == obraId && c.TrabajadorId == trabajador.Id))
-                    return BadRequest("El colaborador ya está asignado a esta obra.");
-                colaborador.NombreCompleto = trabajador.NombreCompleto;
-                colaborador.Dni = trabajador.Documento;
-                colaborador.Especialidad = trabajador.Especialidad;
-                if (colaborador.Jornal <= 0) colaborador.Jornal = trabajador.JornalDiario;
-            }
+            var trabajador = await _context.Personal.FindAsync(colaborador.TrabajadorId);
+            if (trabajador == null) return BadRequest("El colaborador no existe.");
+            if (trabajador.Estado != Trabajador.Activo) return BadRequest("El colaborador está inactivo y no puede asignarse.");
+            if (await _context.Cuadrilla.AnyAsync(c => c.ObraId == obraId && c.TrabajadorId == trabajador.Id && c.FechaSalida == null))
+                return BadRequest("El colaborador ya está asignado a esta obra.");
 
-            // Si no viene fecha, le ponemos la de hoy
-            if (string.IsNullOrEmpty(colaborador.FechaIngresoObra))
-            {
-                colaborador.FechaIngresoObra = DateTime.Now.ToString("dd/MM/yyyy");
-            }
+            // SCTR y examen médico deben estar vigentes
+            var hoy = DateOnly.FromDateTime(DateTime.Now);
+            var vigencias = await VigenciasDocumentales.UltimasAsync(_context, new[] { trabajador.Id });
+            vigencias.TryGetValue(trabajador.Id, out var ultimas);
+            var impedimento = VigenciasDocumentales.Impedimento(trabajador.NombreCompleto, ultimas, hoy);
+            if (impedimento != null) return BadRequest(impedimento);
 
-            _context.Cuadrilla.Add(colaborador);
+            var asignacion = new Colaborador
+            {
+                ObraId = obraId,
+                TrabajadorId = trabajador.Id,
+                NombreCompleto = trabajador.NombreCompleto,
+                Dni = trabajador.Documento,
+                Especialidad = trabajador.Especialidad,
+                Jornal = colaborador.Jornal > 0 ? colaborador.Jornal : trabajador.JornalDiario,
+                EstadoSctr = VigenciaDocumento.EstadoAl(ultimas![VigenciaDocumento.Sctr].FechaVencimiento, hoy),
+                FechaIngresoObra = hoy.ToString("dd/MM/yyyy")
+            };
+
+            _context.Cuadrilla.Add(asignacion);
             await _context.SaveChangesAsync();
 
-            return Ok(colaborador);
+            return Ok(asignacion);
         }
 
-        // DELETE: api/obras/cuadrilla/{id}
-        [HttpDelete("cuadrilla/{id}")]
-        public async Task<IActionResult> RetirarColaborador(int id)
+        // PUT: api/obras/cuadrilla/{id}/salida
+        // La salida no borra la asignación: queda en el historial de participación del colaborador
+        [HttpPut("cuadrilla/{id}/salida")]
+        public async Task<IActionResult> RegistrarSalida(int id, [FromBody] SalidaDto? dto)
         {
             var colaborador = await _context.Cuadrilla.FindAsync(id);
             if (colaborador == null) return NotFound("El colaborador no existe.");
+            if (colaborador.FechaSalida != null) return BadRequest("La salida de este colaborador ya fue registrada.");
 
-            _context.Cuadrilla.Remove(colaborador);
+            var hoy = DateOnly.FromDateTime(DateTime.Now);
+            var salida = dto?.FechaSalida ?? hoy;
+            if (salida > hoy) return BadRequest("La fecha de salida no puede ser futura.");
+            if (FechaIngreso(colaborador) is { } ingreso && salida < ingreso)
+                return BadRequest($"La fecha de salida no puede ser anterior al ingreso ({ingreso:dd/MM/yyyy}).");
+
+            colaborador.FechaSalida = salida;
             await _context.SaveChangesAsync();
-
-            return Ok();
+            return Ok(colaborador);
         }
+
         // POST: api/obras/{obraId}/documentos
         [HttpPost("{obraId}/documentos")]
         public async Task<IActionResult> SubirDocumento(int obraId, [FromForm] string clasificacion, [FromForm] bool visibleCliente, [FromForm] IFormFile? archivo)
