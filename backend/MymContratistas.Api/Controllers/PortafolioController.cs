@@ -47,7 +47,7 @@ namespace MymContratistas.Api.Controllers
                 ? null : "Seleccione un servicio válido.";
 
         // Los bytes iniciales deben coincidir con JPG o PNG, no basta con la extensión
-        private static bool EsImagenValida(byte[] inicio, string extension)
+        internal static bool EsImagenValida(byte[] inicio, string extension)
         {
             var esPng = inicio.Length >= 8 && inicio[0] == 0x89 && inicio[1] == 0x50 && inicio[2] == 0x4E && inicio[3] == 0x47;
             var esJpg = inicio.Length >= 3 && inicio[0] == 0xFF && inicio[1] == 0xD8 && inicio[2] == 0xFF;

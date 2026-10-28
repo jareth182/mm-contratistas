@@ -9,6 +9,8 @@ namespace MymContratistas.Api.Data // <-- Aquí estaba el detalle
 
         public DbSet<Obra> Obras { get; set; }
         public DbSet<Hito> Hitos { get; set; }
+        public DbSet<AvanceHito> AvancesHito { get; set; }
+        public DbSet<FotoAvance> FotosAvance { get; set; }
         public DbSet<Colaborador> Cuadrilla { get; set; }
         public DbSet<Documento> Documentos { get; set; }
         public DbSet<Partida> Partidas { get; set; }
@@ -35,6 +37,10 @@ namespace MymContratistas.Api.Data // <-- Aquí estaba el detalle
                 .HasMany(p => p.Imagenes).WithOne(i => i.Proyecto).HasForeignKey(i => i.ProyectoPortafolioId).OnDelete(DeleteBehavior.Cascade);
             modelBuilder.Entity<ProyectoPortafolio>()
                 .HasOne(p => p.Servicio).WithMany().HasForeignKey(p => p.ServicioId).OnDelete(DeleteBehavior.SetNull);
+            modelBuilder.Entity<Hito>()
+                .HasMany(h => h.Avances).WithOne(a => a.Hito).HasForeignKey(a => a.HitoId).OnDelete(DeleteBehavior.Cascade);
+            modelBuilder.Entity<AvanceHito>()
+                .HasMany(a => a.Fotos).WithOne(f => f.Avance).HasForeignKey(f => f.AvanceHitoId).OnDelete(DeleteBehavior.Cascade);
             modelBuilder.Entity<Cliente>().HasIndex(c => c.Documento).IsUnique();
             modelBuilder.Entity<Trabajador>().ToTable("Personal").HasIndex(t => t.Documento).IsUnique();
             modelBuilder.Entity<Colaborador>()

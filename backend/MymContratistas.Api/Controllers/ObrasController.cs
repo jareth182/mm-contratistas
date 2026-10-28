@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -16,12 +17,14 @@ namespace MymContratistas.Api.Controllers
         private readonly ApplicationDbContext _context;
         private readonly IPasswordHasher<Usuario> _hasher;
         private readonly InvitacionService _invitacion;
+        private readonly NotificacionHitoService _notificacion;
 
-        public ObrasController(ApplicationDbContext context, IPasswordHasher<Usuario> hasher, InvitacionService invitacion)
+        public ObrasController(ApplicationDbContext context, IPasswordHasher<Usuario> hasher, InvitacionService invitacion, NotificacionHitoService notificacion)
         {
             _context = context;
             _hasher = hasher;
             _invitacion = invitacion;
+            _notificacion = notificacion;
         }
 
         public class ObraDto
@@ -247,42 +250,128 @@ namespace MymContratistas.Api.Controllers
             return Ok();
         }
 
-        // PUT: api/obras/hitos/{id}
-        [HttpPut("hitos/{id}")]
-        public async Task<IActionResult> ActualizarAvanceHito(int id, [FromForm] int nuevoAvance, [FromForm] string? descripcion, [FromForm] IFormFile? foto)
+        public const long TamanoMaximoFoto = 5 * 1024 * 1024;
+        public const int MaximoFotosPorAvance = 5;
+        private const int MaximoDescripcionAvance = 1000;
+
+        private static string CarpetaAvances() => Path.Combine(Directory.GetCurrentDirectory(), "Uploads", "avances");
+
+        private static object Proyectar(AvanceHito a) => new
+        {
+            id = a.Id,
+            porcentaje = a.Porcentaje,
+            descripcion = a.Descripcion,
+            fecha = a.Fecha,
+            responsable = a.Responsable,
+            fotos = a.Fotos.OrderBy(f => f.Id).Select(f => new { id = f.Id, nombre = f.NombreOriginal })
+        };
+
+        // Devuelve el mensaje de error o null si todas las fotografías son JPG/PNG válidas
+        private static async Task<string?> ValidarFotos(List<IFormFile> fotos)
+        {
+            if (fotos.Count > MaximoFotosPorAvance) return $"Solo puede adjuntar hasta {MaximoFotosPorAvance} fotografías por avance.";
+            foreach (var foto in fotos)
+            {
+                var extension = Path.GetExtension(foto.FileName).ToLowerInvariant();
+                if (extension != ".jpg" && extension != ".jpeg" && extension != ".png")
+                    return $"«{foto.FileName}» no es una imagen JPG o PNG.";
+                if (foto.Length > TamanoMaximoFoto) return $"«{foto.FileName}» supera el tamaño máximo de 5 MB.";
+
+                var inicio = new byte[8];
+                await using var lectura = foto.OpenReadStream();
+                var leidos = await lectura.ReadAsync(inicio.AsMemory(0, inicio.Length));
+                if (!PortafolioController.EsImagenValida(inicio.AsSpan(0, leidos).ToArray(), extension))
+                    return $"«{foto.FileName}» no es una imagen JPG o PNG válida.";
+            }
+            return null;
+        }
+
+        // POST: api/obras/hitos/{id}/avances  (multipart: porcentaje, descripcion, fotos)
+        [HttpPost("hitos/{id}/avances")]
+        public async Task<IActionResult> RegistrarAvance(int id, [FromForm] int porcentaje, [FromForm] string? descripcion, [FromForm] List<IFormFile>? fotos)
         {
             var hito = await _context.Hitos.FindAsync(id);
-            if (hito == null)
-            {
-                return NotFound("El hito no existe.");
-            }
+            if (hito == null) return NotFound("El hito no existe.");
+            if (hito.Estado == "Completado") return BadRequest("El hito ya está completado y no admite más avances.");
+            if (porcentaje < 1 || porcentaje > 100) return BadRequest("El porcentaje de avance debe estar entre 1 y 100.");
+            if (porcentaje <= hito.AvancePorcentaje) return BadRequest($"El porcentaje debe ser mayor al avance actual del hito ({hito.AvancePorcentaje}%).");
+            if (string.IsNullOrWhiteSpace(descripcion)) return BadRequest("La descripción del trabajo realizado es obligatoria.");
+            if (descripcion.Trim().Length > MaximoDescripcionAvance) return BadRequest($"La descripción no puede superar los {MaximoDescripcionAvance} caracteres.");
 
-            // Actualizamos los datos del hito
-            hito.AvancePorcentaje = nuevoAvance;
-            hito.DescripcionAvance = descripcion;
+            fotos ??= new List<IFormFile>();
+            var errorFotos = await ValidarFotos(fotos);
+            if (errorFotos != null) return BadRequest(errorFotos);
 
-            // Lógica simple para simular guardado de foto
-            if (foto != null && foto.Length > 0)
+            var avance = new AvanceHito
             {
-                // En un proyecto real, aquí guardarías el archivo en el disco o en la nube (ej. AWS S3).
-                // Por ahora, solo guardaremos el nombre original para simularlo en la base de datos.
-                hito.FotoUrl = foto.FileName; 
-            }
+                HitoId = id,
+                Porcentaje = porcentaje,
+                Descripcion = descripcion.Trim(),
+                Fecha = DateTime.UtcNow,
+                Responsable = User?.FindFirstValue(ClaimTypes.Name) ?? "—"
+            };
 
-            if (nuevoAvance >= 100)
+            Directory.CreateDirectory(CarpetaAvances());
+            foreach (var foto in fotos)
             {
-                hito.AvancePorcentaje = 100;
-                hito.Estado = "Completado";
-                hito.FechaReal ??= DateOnly.FromDateTime(DateTime.Now);
+                var guardado = $"{Guid.NewGuid():N}{Path.GetExtension(foto.FileName).ToLowerInvariant()}";
+                await using (var destino = new FileStream(Path.Combine(CarpetaAvances(), guardado), FileMode.Create))
+                    await foto.CopyToAsync(destino);
+                avance.Fotos.Add(new FotoAvance { Archivo = guardado, NombreOriginal = Path.GetFileName(foto.FileName) });
             }
-            else if (nuevoAvance > 0)
-            {
-                hito.Estado = "En proceso";
-            }
+            _context.AvancesHito.Add(avance);
 
+            hito.AvancePorcentaje = porcentaje;
+            hito.DescripcionAvance = avance.Descripcion;
+            var completado = porcentaje == 100;
+            hito.Estado = completado ? "Completado" : "En proceso";
+            if (completado) hito.FechaReal ??= DateOnly.FromDateTime(DateTime.Now);
+
+            // El avance de la obra es el promedio de los hitos ponderado por su peso
+            var obra = await _context.Obras.Include(o => o.ClienteRegistro).FirstAsync(o => o.Id == hito.ObraId);
+            var hitos = await _context.Hitos.Where(h => h.ObraId == hito.ObraId).ToListAsync();
+            obra.AvancePorcentaje = Math.Min(PesoTotal, (int)Math.Round(hitos.Sum(h => h.AvancePorcentaje * h.Peso) / (double)PesoTotal, MidpointRounding.AwayFromZero));
             await _context.SaveChangesAsync();
-            return Ok(hito);
+
+            var mensaje = "Avance registrado correctamente.";
+            if (completado)
+            {
+                var correo = obra.ClienteRegistro?.Correo;
+                if (string.IsNullOrWhiteSpace(correo))
+                    mensaje += " El hito quedó completado; el cliente no tiene correo registrado, por lo que no se le notificó.";
+                else if (await _notificacion.HitoCompletadoAsync(obra, hito, correo))
+                    mensaje += " El hito quedó completado y se notificó al cliente por correo.";
+                else
+                    mensaje += " El hito quedó completado, pero no se pudo enviar el correo al cliente.";
+            }
+            return Ok(new { mensaje, hito, avanceObra = obra.AvancePorcentaje, avance = Proyectar(avance) });
         }
+
+        // GET: api/obras/hitos/{id}/avances  (del más reciente al más antiguo)
+        [HttpGet("hitos/{id}/avances")]
+        public async Task<IActionResult> HistorialAvances(int id)
+        {
+            var hito = await _context.Hitos.FindAsync(id);
+            if (hito == null) return NotFound("El hito no existe.");
+
+            var avances = await _context.AvancesHito.Include(a => a.Fotos)
+                .Where(a => a.HitoId == id).OrderByDescending(a => a.Fecha).ThenByDescending(a => a.Id).ToListAsync();
+            return Ok(avances.Select(Proyectar));
+        }
+
+        // GET: api/obras/avances/fotos/{id}
+        [HttpGet("avances/fotos/{id}")]
+        public async Task<IActionResult> VerFotoAvance(int id)
+        {
+            var foto = await _context.FotosAvance.FindAsync(id);
+            if (foto == null) return NotFound("La fotografía no existe.");
+
+            var ruta = Path.Combine(CarpetaAvances(), foto.Archivo);
+            if (!System.IO.File.Exists(ruta)) return NotFound("El archivo físico no se encontró.");
+
+            return PhysicalFile(ruta, Path.GetExtension(foto.Archivo) == ".png" ? "image/png" : "image/jpeg");
+        }
+
         // POST: api/obras/{obraId}/cuadrilla
         [HttpPost("{obraId}/cuadrilla")]
         public async Task<ActionResult<Colaborador>> AsignarColaborador(int obraId, Colaborador colaborador)

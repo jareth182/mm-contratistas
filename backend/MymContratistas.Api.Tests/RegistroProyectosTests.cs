@@ -48,7 +48,7 @@ namespace MymContratistas.Api.Tests
             var invitacion = new InvitacionService(_correo, config, NullLogger<InvitacionService>.Instance);
 
             _clientes = new ClientesController(_db);
-            _obras = new ObrasController(_db, new PasswordHasher<Usuario>(), invitacion);
+            _obras = new ObrasController(_db, new PasswordHasher<Usuario>(), invitacion, new NotificacionHitoService(_correo, NullLogger<NotificacionHitoService>.Instance));
         }
 
         public void Dispose()

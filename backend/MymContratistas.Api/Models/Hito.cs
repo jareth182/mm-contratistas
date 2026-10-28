@@ -21,5 +21,9 @@ namespace MymContratistas.Api.Models
         
         [JsonIgnore] // Oculta la obra padre al enviar datos para evitar un bucle infinito
         public Obra? Obra { get; set; }
+
+        // Historial de avances registrados (HU13)
+        [JsonIgnore]
+        public List<AvanceHito> Avances { get; set; } = new List<AvanceHito>();
     }
 }

@@ -51,6 +51,38 @@ namespace MymContratistas.Api.Migrations
                     b.ToTable("AdjuntosCotizacion");
                 });
 
+            modelBuilder.Entity("MymContratistas.Api.Models.AvanceHito", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Descripcion")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("Fecha")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("HitoId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Porcentaje")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Responsable")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("HitoId");
+
+                    b.ToTable("AvancesHito");
+                });
+
             modelBuilder.Entity("MymContratistas.Api.Models.Cliente", b =>
                 {
                     b.Property<int>("Id")
@@ -162,6 +194,32 @@ namespace MymContratistas.Api.Migrations
                     b.HasIndex("ObraId");
 
                     b.ToTable("Documentos");
+                });
+
+            modelBuilder.Entity("MymContratistas.Api.Models.FotoAvance", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Archivo")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("AvanceHitoId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("NombreOriginal")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AvanceHitoId");
+
+                    b.ToTable("FotosAvance");
                 });
 
             modelBuilder.Entity("MymContratistas.Api.Models.Gasto", b =>
@@ -697,6 +755,17 @@ namespace MymContratistas.Api.Migrations
                     b.Navigation("Solicitud");
                 });
 
+            modelBuilder.Entity("MymContratistas.Api.Models.AvanceHito", b =>
+                {
+                    b.HasOne("MymContratistas.Api.Models.Hito", "Hito")
+                        .WithMany("Avances")
+                        .HasForeignKey("HitoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Hito");
+                });
+
             modelBuilder.Entity("MymContratistas.Api.Models.Colaborador", b =>
                 {
                     b.HasOne("MymContratistas.Api.Models.Obra", "Obra")
@@ -722,6 +791,17 @@ namespace MymContratistas.Api.Migrations
                         .IsRequired();
 
                     b.Navigation("Obra");
+                });
+
+            modelBuilder.Entity("MymContratistas.Api.Models.FotoAvance", b =>
+                {
+                    b.HasOne("MymContratistas.Api.Models.AvanceHito", "Avance")
+                        .WithMany("Fotos")
+                        .HasForeignKey("AvanceHitoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Avance");
                 });
 
             modelBuilder.Entity("MymContratistas.Api.Models.Gasto", b =>
@@ -823,6 +903,16 @@ namespace MymContratistas.Api.Migrations
                         .IsRequired();
 
                     b.Navigation("Rol");
+                });
+
+            modelBuilder.Entity("MymContratistas.Api.Models.AvanceHito", b =>
+                {
+                    b.Navigation("Fotos");
+                });
+
+            modelBuilder.Entity("MymContratistas.Api.Models.Hito", b =>
+                {
+                    b.Navigation("Avances");
                 });
 
             modelBuilder.Entity("MymContratistas.Api.Models.Obra", b =>
