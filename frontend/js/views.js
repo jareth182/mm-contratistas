@@ -702,49 +702,41 @@ TC.hitos = async () => {
 
 TC.cuad = async () => {
   let filas = '';
-  let total = 0;
-  let disponibles = [];
-  try {
-    const rp = await apiFetch(`${API}/api/personal?soloActivos=true`);
-    if (rp.ok) disponibles = await rp.json();
-  } catch (e) { /* la lista queda vacía */ }
+  let activos = 0, retirados = 0, finalizada = false;
   try {
     const respuesta = await apiFetch(API + '/api/obras');
     const obras = await respuesta.json();
     const obraActual = obras.find(o => o.id === ST.obraId) || null;
-    const cuadrillaReal = obraActual && obraActual.cuadrilla ? obraActual.cuadrilla : [];
-    total = cuadrillaReal.length;
+    finalizada = !!obraActual && obraActual.estado === 'Finalizado';
+    // Primero quienes siguen en obra; los retirados quedan como historial de participación
+    const cuadrilla = (obraActual && obraActual.cuadrilla ? obraActual.cuadrilla : [])
+      .slice().sort((x, y) => (x.estado === 'Activo' ? 0 : 1) - (y.estado === 'Activo' ? 0 : 1) || y.id - x.id);
+    activos = cuadrilla.filter(c => c.estado === 'Activo').length;
+    retirados = cuadrilla.length - activos;
 
-    if (total === 0) {
+    if (cuadrilla.length === 0) {
       filas = `<tr><td colspan="6" style="text-align:center;color:var(--concrete)">No hay colaboradores asignados a esta obra.</td></tr>`;
     } else {
-      filas = cuadrillaReal.map(c => `<tr>
-        <td><b>${c.nombreCompleto}</b></td>
-        <td>${c.especialidad}</td>
+      filas = cuadrilla.map(c => {
+        const activo = c.estado === 'Activo';
+        return `<tr${activo ? '' : ' style="color:var(--concrete)"'}>
+        <td><b>${esc(c.nombreCompleto)}</b></td>
+        <td>${esc(c.especialidad)}</td>
         <td class="num">${S(c.jornal)}</td>
-        <td>${c.fechaIngresoObra}</td>
-        <td>${dt(c.estadoSctr)}</td>
-        <td style="width:150px"><button class="btn link" onclick="retirarColaborador(${c.id})">Registrar salida</button></td>
-      </tr>`).join('');
+        <td>${esc(c.fechaIngresoObra)}</td>
+        <td>${activo ? '<span class="tg ok">Activo</span>' : `<span class="tg mt">Retirado el ${fmtFecha(c.fechaSalida)}</span>`}</td>
+        <td style="width:150px">${activo ? `<button class="btn link" onclick="registrarSalida(${c.id})">Registrar salida</button>` : ''}</td>
+      </tr>`;
+      }).join('');
     }
   } catch (error) {
     filas = `<tr><td colspan="6" style="text-align:center;color:var(--rust)">Error al cargar la cuadrilla desde el servidor.</td></tr>`;
   }
 
   return `
-   <div class="card" style="margin-bottom:20px"><div class="ch"><h4>Asignar nuevo colaborador</h4></div><div class="cb">
-    <div class="g3">
-     <div class="f"><label>Colaborador</label><select id="nuevo_colab_trabajador">
-      <option value="">${disponibles.length ? 'Seleccione un colaborador activo' : 'No hay colaboradores activos registrados'}</option>
-      ${disponibles.map(t => `<option value="${t.id}">${esc(t.nombreCompleto)} · ${esc(t.especialidad)} · ${S(t.jornalDiario)}</option>`).join('')}
-     </select><div class="hint" style="margin-top:4px">Solo aparecen los colaboradores activos de <button class="btn link" onclick="go('personal')">Personal</button>.</div></div>
-     <div class="f"><label>Jornal en esta obra (S/)</label><input id="nuevo_colab_jornal" type="number" placeholder="Según su ficha"></div>
-    </div>
-    <button class="btn sm" onclick="asignarColaborador(${ST.obraId})">Asignar colaborador</button>
-   </div></div>
-
-   <div class="card"><div class="ch"><span class="hint">${total} colaboradores en obra</span></div>
-   <table><thead><tr><th>Colaborador</th><th>Especialidad</th><th class="num">Jornal</th><th>Ingreso a obra</th><th>Documentación</th><th></th></tr></thead><tbody>
+   <div class="card"><div class="ch"><span class="hint">${activos} colaboradores en obra${retirados ? ` · ${retirados} con salida registrada` : ''}</span>
+    <button class="btn sm" onclick="abrirModalCuadrilla()" ${finalizada ? 'disabled title="La obra está finalizada"' : ''}>Asignar Colaborador</button>${ST.hu ? '<span class="hu">HU14</span>' : ''}</div>
+   <table><thead><tr><th>Colaborador</th><th>Especialidad</th><th class="num">Jornal</th><th>Fecha de ingreso</th><th>Estado</th><th></th></tr></thead><tbody>
    ${filas}
    </tbody></table></div>`;
 };

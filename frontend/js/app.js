@@ -401,54 +401,110 @@ async function guardarAvance(hitoId) {
 
 // --- CUADRILLA ---
 
-async function asignarColaborador(obraId) {
-  const trabajadorId = document.getElementById('nuevo_colab_trabajador').value;
-  const jornalStr = document.getElementById('nuevo_colab_jornal').value;
+// Ventana emergente con buscador del personal activo que aún no está en la cuadrilla (HU14)
+let temporizadorBusquedaCuadrilla = null;
 
-  if (!trabajadorId) return say('bad', 'Seleccione un colaborador activo.');
-  if (jornalStr && !(parseFloat(jornalStr) > 0)) return say('bad', 'Ingrese un jornal válido o deje el campo vacío para usar el de su ficha.');
+function abrirModalCuadrilla() {
+  let capa = document.getElementById('modal_cuadrilla');
+  if (!capa) {
+    capa = document.createElement('div');
+    capa.id = 'modal_cuadrilla';
+    capa.setAttribute('role', 'dialog');
+    capa.setAttribute('aria-modal', 'true');
+    document.body.appendChild(capa);
+  }
+  capa.style.cssText = 'position:fixed;inset:0;background:rgba(10,25,41,.6);display:flex;align-items:center;justify-content:center;z-index:900;overflow:auto';
+  capa.innerHTML = `<div class="card" style="max-width:720px;width:94%;margin:20px"><div class="ch"><h4>Asignar colaborador</h4></div><div class="cb">
+    <div id="mcuad_msg"></div>
+    <div class="g2">
+     <div class="f"><label>Buscar por nombre, documento o especialidad</label><input id="mcuad_buscar" placeholder="Ej. Rómulo, 41258963 u Operario" oninput="buscarDisponiblesCuadrilla(true)"></div>
+     <div class="f"><label>Jornal en esta obra (S/)</label><input id="mcuad_jornal" type="number" min="0" placeholder="Según su ficha"></div>
+    </div>
+    <div id="mcuad_lista" style="max-height:340px;overflow:auto;border:1px solid var(--line)"><p class="hint" style="padding:12px">Cargando personal…</p></div>
+    <p class="hint" style="margin-top:8px">Solo se puede asignar personal activo con SCTR y examen médico vigentes.</p>
+    <div style="margin-top:10px"><button class="btn ghost" onclick="cerrarModalCuadrilla()">Cerrar</button></div>
+  </div></div>`;
+  buscarDisponiblesCuadrilla(false);
+  setTimeout(() => { const e = document.getElementById('mcuad_buscar'); if (e) e.focus(); }, 30);
+}
 
-  const hoy = new Date();
-  const fechaActual = hoy.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+function cerrarModalCuadrilla() {
+  const capa = document.getElementById('modal_cuadrilla');
+  if (capa) capa.remove();
+}
 
-  // Nombre, documento y especialidad los completa el servidor desde la ficha del colaborador
-  const nuevoColaborador = {
-    trabajadorId: parseInt(trabajadorId),
-    jornal: jornalStr ? parseFloat(jornalStr) : 0,
-    estadoSctr: "Vigente",
-    fechaIngresoObra: fechaActual
-  };
+function buscarDisponiblesCuadrilla(conRetraso) {
+  clearTimeout(temporizadorBusquedaCuadrilla);
+  temporizadorBusquedaCuadrilla = setTimeout(async () => {
+    const lista = document.getElementById('mcuad_lista');
+    const campo = document.getElementById('mcuad_buscar');
+    if (!lista || !campo) return;
+    try {
+      const respuesta = await apiFetch(`${API}/api/obras/${ST.obraId}/cuadrilla/disponibles?buscar=${encodeURIComponent(campo.value.trim())}`);
+      if (!respuesta.ok) { lista.innerHTML = '<p class="hint" style="padding:12px;color:var(--rust)">No se pudo cargar el personal.</p>'; return; }
+      pintarDisponiblesCuadrilla(await respuesta.json());
+    } catch (e) {
+      lista.innerHTML = '<p class="hint" style="padding:12px;color:var(--rust)">Error de conexión con el servidor.</p>';
+    }
+  }, conRetraso ? 250 : 0);
+}
+
+function pintarDisponiblesCuadrilla(personal) {
+  const lista = document.getElementById('mcuad_lista');
+  if (!lista) return;
+  if (!personal.length) { lista.innerHTML = '<p class="hint" style="padding:12px">No hay personal activo disponible con ese criterio.</p>'; return; }
+  const clase = { 'Vigente': 'ok', 'Por vencer': 'wn', 'Vencido': 'bd', 'Sin registrar': 'mt' };
+  const etiqueta = (nombre, d) => `<span class="tg ${clase[d.estado] || 'mt'}" title="${d.vencimiento ? 'Vence el ' + fmtFecha(d.vencimiento) : 'Sin vigencia registrada'}">${nombre}: ${d.estado}</span>`;
+  lista.innerHTML = personal.map(t => `<div style="display:flex;gap:12px;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--line-2)">
+      <div style="min-width:0">
+        <b>${esc(t.nombreCompleto)}</b><span class="sub" style="display:block">${esc(t.especialidad)} · ${esc(t.documento)} · ${S(t.jornalDiario)}</span>
+        <div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">${etiqueta('SCTR', t.sctr)}${etiqueta('Examen médico', t.examenMedico)}</div>
+        ${t.apto ? '' : `<div style="margin-top:4px;color:var(--rust);font-size:13px">${esc(t.motivo)}</div>`}
+      </div>
+      <button class="btn sm" onclick="asignarColaborador(${t.id})" ${t.apto ? '' : 'disabled'}>Asignar</button>
+    </div>`).join('');
+}
+
+async function asignarColaborador(trabajadorId) {
+  const aviso = texto => { const m = document.getElementById('mcuad_msg'); if (m) m.innerHTML = `<div class="msg bad">${esc(texto)}</div>`; };
+  const jornalStr = document.getElementById('mcuad_jornal').value;
+  if (jornalStr && !(parseFloat(jornalStr) > 0)) return aviso('Ingrese un jornal válido o deje el campo vacío para usar el de su ficha.');
 
   try {
-    const respuesta = await apiFetch(`${API}/api/obras/${obraId}/cuadrilla`, {
+    const respuesta = await apiFetch(`${API}/api/obras/${ST.obraId}/cuadrilla`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(nuevoColaborador)
+      body: JSON.stringify({ trabajadorId: trabajadorId, jornal: jornalStr ? parseFloat(jornalStr) : 0 })
     });
 
     if (respuesta.ok) {
-      say('ok', 'Colaborador asignado correctamente a la cuadrilla.');
+      const c = await respuesta.json();
+      cerrarModalCuadrilla();
+      say('ok', `${esc(c.nombreCompleto)} fue asignado a la cuadrilla.`);
     } else if (respuesta.status !== 401) {
-      say('bad', esc(await respuesta.text()) || 'Ocurrió un error al asignar el colaborador.');
+      aviso((await respuesta.text()) || 'Ocurrió un error al asignar el colaborador.');
+      buscarDisponiblesCuadrilla(false);
     }
   } catch (error) {
-    say('bad', 'Error de conexión con el servidor.');
+    aviso('Error de conexión con el servidor.');
   }
 }
 
-async function retirarColaborador(colabId) {
-  if (!confirm("¿Está seguro de registrar la salida de este colaborador?")) return;
+// La salida no borra al colaborador: queda en la cuadrilla como retirado y en su historial de obras
+async function registrarSalida(colabId) {
+  if (!confirm('¿Registrar la salida de este colaborador? Quedará en el historial de la obra.')) return;
 
   try {
-    const respuesta = await apiFetch(`${API}/api/obras/cuadrilla/${colabId}`, {
-      method: 'DELETE'
+    const respuesta = await apiFetch(`${API}/api/obras/cuadrilla/${colabId}/salida`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}'
     });
 
     if (respuesta.ok) {
       say('ok', 'Salida del colaborador registrada correctamente.');
-      draw(); 
-    } else {
-      say('bad', 'Ocurrió un error al retirar al colaborador.');
+    } else if (respuesta.status !== 401) {
+      say('bad', esc((await respuesta.text()) || 'Ocurrió un error al registrar la salida.'));
     }
   } catch (error) {
     say('bad', 'Error de conexión con el servidor.');

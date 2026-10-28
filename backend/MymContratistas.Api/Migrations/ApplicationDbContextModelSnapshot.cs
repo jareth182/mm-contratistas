@@ -141,6 +141,9 @@ namespace MymContratistas.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<DateOnly?>("FechaSalida")
+                        .HasColumnType("date");
+
                     b.Property<decimal>("Jornal")
                         .HasColumnType("numeric");
 
@@ -744,6 +747,37 @@ namespace MymContratistas.Api.Migrations
                     b.ToTable("Usuarios");
                 });
 
+            modelBuilder.Entity("MymContratistas.Api.Models.VigenciaDocumento", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateOnly>("FechaInicio")
+                        .HasColumnType("date");
+
+                    b.Property<DateTime>("FechaRegistro")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("FechaVencimiento")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("TrabajadorId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TrabajadorId", "Tipo");
+
+                    b.ToTable("Vigencias");
+                });
+
             modelBuilder.Entity("MymContratistas.Api.Models.AdjuntoCotizacion", b =>
                 {
                     b.HasOne("MymContratistas.Api.Models.SolicitudCotizacion", "Solicitud")
@@ -903,6 +937,17 @@ namespace MymContratistas.Api.Migrations
                         .IsRequired();
 
                     b.Navigation("Rol");
+                });
+
+            modelBuilder.Entity("MymContratistas.Api.Models.VigenciaDocumento", b =>
+                {
+                    b.HasOne("MymContratistas.Api.Models.Trabajador", "Trabajador")
+                        .WithMany()
+                        .HasForeignKey("TrabajadorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Trabajador");
                 });
 
             modelBuilder.Entity("MymContratistas.Api.Models.AvanceHito", b =>
