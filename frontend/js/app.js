@@ -4,7 +4,7 @@ ST.perfil = ST.usuario ? (ST.usuario.rol === 'Cliente' ? 'cli' : 'adm') : 'pub';
 
 /* ================= control ================= */
 function go(v){ST.formUsuario=null;ST.formTrabajador=null;ST.formServicio=null;ST.formHito=null;ST.formProyecto=null;ST.formObra=null;ST.finalizando=false;ST.v=v;ST.msg=null;ST.menu=null;ST.nav=false;draw();window.scrollTo({top:0})}
-function abrirObra(id){ST.obraId=id;ST.formHito=null;ST.hitoEditando=null;ST.registrandoAvance=false;ST.formAvance=null;ST.tab='hitos';go('obra')}
+function abrirObra(id){ST.obraId=id;ST.formHito=null;ST.hitoEditando=null;ST.registrandoAvance=false;ST.formAvance=null;ST.partidaEditando=null;ST.tab='hitos';go('obra')}
 function tab(t){ST.tab=t;ST.msg=null;draw()}
 function tog(m,e){e.stopPropagation();ST.menu=ST.menu===m?null:m;draw()}
 function say(t,x){ST.msg=`<div class="msg ${t}">${x}</div>`;draw();
@@ -588,42 +588,41 @@ function descargarDocumento(docId) {
 
 // --- PRESUPUESTO / PARTIDAS ---
 
-async function agregarPartidaFormulario(obraId) {
-  const nombre = document.getElementById('partida_nombre').value;
-  const montoStr = document.getElementById('partida_monto').value;
-  
-  if (!nombre || nombre.trim() === "" || !montoStr) {
-    say('bad', 'Ambos campos son obligatorios.');
-    return;
-  }
-  
-  const monto = parseFloat(montoStr);
-  if (isNaN(monto) || monto <= 0) {
-    say('bad', 'Por favor, ingrese un monto válido mayor a 0.');
-    return;
-  }
+// Lee y valida el formulario de partida; los errores se muestran en el propio formulario para no perder lo escrito
+function leerFormularioPartida() {
+  const aviso = texto => { document.getElementById('partida_error').innerHTML = `<div class="msg bad">${esc(texto)}</div>`; return null; };
+  const nombre = document.getElementById('partida_nombre').value.trim();
+  const descripcion = document.getElementById('partida_descripcion').value.trim();
+  const monto = parseFloat(document.getElementById('partida_monto').value);
 
-  const nuevaPartida = {
-    nombre: nombre,
-    montoAsignado: monto
-  };
+  if (!nombre) return aviso('El nombre de la partida es obligatorio.');
+  if (isNaN(monto) || monto <= 0) return aviso('Ingrese un monto válido mayor a 0.');
+  return { nombre: nombre, descripcion: descripcion, montoAsignado: monto };
+}
 
+async function guardarPartida(url, metodo, datos, mensajeOk) {
+  const aviso = texto => { document.getElementById('partida_error').innerHTML = `<div class="msg bad">${esc(texto)}</div>`; };
   try {
-    const respuesta = await apiFetch(`${API}/api/obras/${obraId}/partidas`, {
-      method: 'POST',
+    const respuesta = await apiFetch(url, {
+      method: metodo,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(nuevaPartida)
+      body: JSON.stringify(datos)
     });
 
     if (respuesta.ok) {
-      say('ok', 'Partida agregada correctamente.');
-      draw(); 
-    } else {
-      say('bad', 'Ocurrió un error al guardar la partida.');
+      ST.partidaEditando = null;
+      say('ok', mensajeOk);
+    } else if (respuesta.status !== 401) {
+      aviso((await respuesta.text()) || 'Ocurrió un error al guardar la partida.');
     }
   } catch (error) {
-    say('bad', 'Error de conexión con el servidor.');
+    aviso('Error de conexión con el servidor.');
   }
+}
+
+async function agregarPartidaFormulario(obraId) {
+  const datos = leerFormularioPartida();
+  if (datos) await guardarPartida(`${API}/api/obras/${obraId}/partidas`, 'POST', datos, 'Partida agregada correctamente.');
 }
 
 function seleccionarPartida(id) {
@@ -638,41 +637,12 @@ function cancelarEdicionPartida() {
 }
 
 async function actualizarPartida(partidaId) {
-  const nombre = document.getElementById('partida_nombre').value;
-  const montoStr = document.getElementById('partida_monto').value;
-  const monto = parseFloat(montoStr);
-
-  if (!nombre || isNaN(monto) || monto <= 0) {
-    say('bad', 'Datos inválidos. Revise los campos.');
-    return;
-  }
-
-  const partidaActualizada = {
-    nombre: nombre,
-    montoAsignado: monto
-  };
-
-  try {
-    const respuesta = await apiFetch(`${API}/api/obras/partidas/${partidaId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(partidaActualizada)
-    });
-
-    if (respuesta.ok) {
-      say('ok', 'Partida actualizada correctamente.');
-      ST.partidaEditando = null;
-      draw(); 
-    } else {
-      say('bad', 'Ocurrió un error al actualizar.');
-    }
-  } catch (error) {
-    say('bad', 'Error de conexión con el servidor.');
-  }
+  const datos = leerFormularioPartida();
+  if (datos) await guardarPartida(`${API}/api/obras/partidas/${partidaId}`, 'PUT', datos, 'Partida actualizada correctamente.');
 }
 
 async function eliminarPartida(partidaId) {
-  if (!confirm("¿Está seguro de eliminar esta partida del presupuesto?")) return;
+  if (!confirm("¿Eliminar esta partida del presupuesto? Esta acción no se puede deshacer.")) return;
 
   try {
     const respuesta = await apiFetch(`${API}/api/obras/partidas/${partidaId}`, {
@@ -681,9 +651,8 @@ async function eliminarPartida(partidaId) {
 
     if (respuesta.ok) {
       say('ok', 'Partida eliminada correctamente.');
-      draw(); 
-    } else {
-      say('bad', 'Ocurrió un error al eliminar la partida.');
+    } else if (respuesta.status !== 401) {
+      say('bad', esc((await respuesta.text()) || 'Ocurrió un error al eliminar la partida.'));
     }
   } catch (error) {
     say('bad', 'Error de conexión con el servidor.');

@@ -801,62 +801,71 @@ TC.pres = async () => {
   let filas = '';
   let totalPartidas = 0;
   let montoTotal = 0;
-  let editandoId = ST.partidaEditando || null;
-  let editNombre = '', editMonto = '';
-  
+  const editandoId = ST.partidaEditando || null;
+  let edicion = { nombre: '', descripcion: '', monto: '' };
+
   try {
-    const respuesta = await apiFetch(API + '/api/obras');
-    const obras = await respuesta.json();
-    const obraActual = obras.find(o => o.id === ST.obraId) || null;
-    const partidasReales = obraActual && obraActual.partidas ? obraActual.partidas : [];
-    totalPartidas = partidasReales.length;
+    const respuesta = await apiFetch(`${API}/api/obras/${ST.obraId}/presupuesto`);
+    const presupuesto = await respuesta.json();
+    const partidas = presupuesto.partidas || [];
+    totalPartidas = partidas.length;
+    montoTotal = presupuesto.montoTotal || 0;
 
     if (totalPartidas === 0) {
-      filas = `<tr><td colspan="3" style="text-align:center;color:var(--concrete)">No hay partidas presupuestales registradas.</td></tr>`;
+      filas = `<tr><td colspan="4" style="text-align:center;color:var(--concrete)">No hay partidas presupuestales registradas.</td></tr>`;
     } else {
-      filas = partidasReales.map(p => {
-        montoTotal += p.montoAsignado;
-        if (editandoId === p.id) { editNombre = p.nombre; editMonto = p.montoAsignado; }
+      filas = partidas.map(p => {
+        if (editandoId === p.id) edicion = { nombre: p.nombre, descripcion: p.descripcion, monto: p.montoAsignado };
+        const conGastos = p.gastosAsociados > 0;
         return `<tr>
-          <td><b>${p.nombre}</b></td>
+          <td><b>${esc(p.nombre)}</b></td>
+          <td>${esc(p.descripcion) || '<span class="hint">—</span>'}</td>
           <td class="num">${S(p.montoAsignado)}</td>
-          <td style="width:160px;white-space:nowrap">
-            <button class="btn link" onclick="seleccionarPartida(${p.id})">Editar</button> · 
-            <button class="btn link" onclick="eliminarPartida(${p.id})">Eliminar</button>
+          <td style="width:190px;white-space:nowrap">
+            <button class="btn link" onclick="seleccionarPartida(${p.id})">Editar</button> ·
+            ${conGastos
+              ? `<span class="hint" title="Tiene ${p.gastosAsociados} gasto(s) asociado(s); no se puede eliminar">Con gastos</span>`
+              : `<button class="btn link" onclick="eliminarPartida(${p.id})">Eliminar</button>`}
           </td>
         </tr>`;
       }).join('');
     }
   } catch (error) {
-    filas = `<tr><td colspan="3" style="text-align:center;color:var(--rust)">Error al cargar el presupuesto desde el servidor.</td></tr>`;
+    filas = `<tr><td colspan="4" style="text-align:center;color:var(--rust)">Error al cargar el presupuesto desde el servidor.</td></tr>`;
   }
 
   return `
    <div class="card" style="margin-bottom:20px">
-    <div class="ch"><h4>${editandoId ? 'Editar partida presupuestal' : 'Nueva partida'}</h4></div>
+    <div class="ch"><h4>${editandoId ? 'Editar partida presupuestal' : 'Nueva partida'}</h4>${ST.hu ? '<span class="hu">HU16</span>' : ''}</div>
     <div class="cb">
-     <div class="g2">
+     <div class="g3">
       <div class="f">
-        <label>Nombre de la partida</label>
-        <input id="partida_nombre" placeholder="Ej. Movimiento de tierras" value="${editNombre}">
+        <label>Partida</label>
+        <input id="partida_nombre" maxlength="100" placeholder="Ej. Movimiento de tierras" value="${esc(edicion.nombre)}">
       </div>
       <div class="f">
-        <label>Monto asignado (S/)</label>
-        <input id="partida_monto" type="number" placeholder="48000" value="${editMonto}">
+        <label>Descripción (opcional)</label>
+        <input id="partida_descripcion" maxlength="300" placeholder="Ej. Excavación y nivelación" value="${esc(edicion.descripcion)}">
+      </div>
+      <div class="f">
+        <label>Monto (S/)</label>
+        <input id="partida_monto" type="number" min="0.01" step="0.01" placeholder="48000" value="${esc(edicion.monto)}">
       </div>
      </div>
+     <div id="partida_error"></div>
      <button class="btn sm" onclick="${editandoId ? `actualizarPartida(${editandoId})` : `agregarPartidaFormulario(${ST.obraId})`}">
-        ${editandoId ? 'Guardar cambios' : 'Agregar partida'}
+        ${editandoId ? 'Guardar cambios' : 'Agregar Partida'}
      </button>
-     ${editandoId ? `<button class="btn ghost sm" onclick="cancelarEdicionPartida()">Cancelar</button>` : ''}
+     ${editandoId ? `<button class="btn ghost sm" style="margin-left:8px" onclick="cancelarEdicionPartida()">Cancelar</button>` : ''}
     </div>
    </div>
 
    <div class="card"><div class="ch"><span class="hint">${totalPartidas} partidas registradas</span></div>
-   <table><thead><tr><th>Partida</th><th class="num">Monto asignado</th><th></th></tr></thead><tbody>
+   <table><thead><tr><th>Partida</th><th>Descripción</th><th class="num">Monto (S/)</th><th></th></tr></thead><tbody>
    ${filas}
-   <tr style="background:#F5F7F8"><td><b>Monto total presupuestado</b></td><td class="num"><b>${S(montoTotal)}</b></td><td></td></tr>
-   </tbody></table></div>`;
+   <tr style="background:#F5F7F8"><td colspan="2"><b>Monto total presupuestado</b></td><td class="num"><b>${S(montoTotal)}</b></td><td></td></tr>
+   </tbody></table>
+   <p class="hint" style="margin:10px 14px">Una partida con gastos asociados no se puede eliminar, y su monto no puede bajar de lo ya gastado.</p></div>`;
 };
 
 TC.gastos = async () => {
