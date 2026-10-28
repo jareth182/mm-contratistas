@@ -755,13 +755,14 @@ TC.docs = async () => {
     if (total === 0) {
       filas = `<tr><td colspan="5" style="text-align:center;color:var(--concrete)">No hay documentos cargados en esta obra.</td></tr>`;
     } else {
-      filas = docsReales.map(d => `<tr>
-        <td><b>${d.nombre}</b></td>
-        <td><span class="tg mt">${d.clasificacion}</span></td>
-        <td>${d.fechaCarga}</td>
+      filas = docsReales.slice().sort((a, b) => b.id - a.id).map(d => `<tr>
+        <td><b>${esc(d.nombre)}</b></td>
+        <td><span class="tg mt">${esc(d.clasificacion)}</span></td>
+        <td>${esc(d.fechaCarga)}</td>
         <td>${d.visibleCliente ? '<span class="tg ok">Sí</span>' : '<span class="tg mt">No — uso interno</span>'}</td>
-        <td style="width:170px;white-space:nowrap">
-          <button class="btn link" onclick="descargarDocumento(${d.id})">Descargar</button> · 
+        <td style="width:330px;white-space:nowrap">
+          <button class="btn link" onclick="descargarDocumento(${d.id})">Descargar</button> ·
+          <button class="btn link" onclick="cambiarVisibilidadDocumento(${d.id}, ${!d.visibleCliente})">${d.visibleCliente ? 'Ocultar al cliente' : 'Mostrar al cliente'}</button> ·
           <button class="btn link" onclick="eliminarDocumento(${d.id})">Eliminar</button>
         </td>
       </tr>`).join('');
@@ -774,19 +775,19 @@ TC.docs = async () => {
    <div class="card" style="margin-bottom:20px"><div class="ch"><h4>Subir nuevo documento</h4></div><div class="cb">
     <div class="g3">
      <div class="f"><label>Archivo</label>
-       <input type="file" id="nuevo_doc_archivo" style="display:none" onchange="document.getElementById('nombre_doc').innerText = this.files[0] ? this.files[0].name : ''">
+       <input type="file" id="nuevo_doc_archivo" style="display:none" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/png,image/jpeg" onchange="document.getElementById('nombre_doc').innerText = this.files[0] ? this.files[0].name : ''">
        <button class="btn ghost sm" onclick="document.getElementById('nuevo_doc_archivo').click()">Seleccionar archivo</button>
        <span id="nombre_doc" class="hint" style="margin-left: 10px;"></span>
      </div>
      <div class="f"><label>Clasificación</label><select id="nuevo_doc_clasif">
       <option>Contrato</option><option>Permiso</option><option>Plano</option><option>Comprobante</option><option>Otro</option>
      </select></div>
-     <div class="f"><label>Visibilidad</label><select id="nuevo_doc_vis">
-      <option value="true">Visible para el cliente</option>
-      <option value="false">Oculto (Uso interno)</option>
-     </select></div>
+     <div class="f"><label>Visibilidad</label>
+      <label style="display:flex;gap:8px;align-items:center;font-weight:normal;margin-top:6px"><input type="checkbox" id="nuevo_doc_vis" style="width:auto"> Visible para el cliente</label>
+      <div class="hint" style="margin-top:4px">Sin marcar, el documento es de uso interno.</div></div>
     </div>
-    <button class="btn sm" onclick="subirDocumento(${ST.obraId})">Subir documento</button>
+    <div id="doc_error"></div>
+    <button class="btn sm" onclick="subirDocumento(${ST.obraId})">Subir Documento</button>${ST.hu ? '<span class="hu">HU15</span>' : ''}
     <p class="hint" style="margin-top:12px">Clasificaciones: Contrato, Permiso, Plano, Comprobante y Otro. PDF, JPG o PNG hasta 10 MB.</p>
    </div></div>
 
@@ -1062,7 +1063,10 @@ V['c-obra']=async()=>{
   <div class="cb"><p style="margin-top:0">Vaciado de losa del cuarto nivel y desencofrado de columnas del tercero.</p>
    <div class="thumbs"><div class="th">Losa nivel 4</div><div class="th">Columnas</div><div class="th">Vista general</div></div></div></div>
  <div class="card" style="margin-top:20px"><div class="ch"><h4>Documentos de mi obra</h4></div>
-  <div class="cb"><div class="thumbs">${OBRA.docs.filter(d=>d.v).map(d=>`<span class="th doc">${d.n}</span>`).join('')}</div></div></div>
+  <table><thead><tr><th>Documento</th><th>Clasificación</th><th>Fecha de carga</th><th></th></tr></thead><tbody>
+  ${(obra.documentos||[]).map(d=>`<tr><td><b>${esc(d.nombre)}</b></td><td><span class="tg mt">${esc(d.clasificacion)}</span></td><td>${esc(d.fechaCarga)}</td>
+   <td style="width:110px"><button class="btn link" onclick="descargarArchivo('${API}/api/cliente/documentos/${d.id}/descargar')">Descargar</button></td></tr>`).join('')||'<tr><td colspan="4" style="text-align:center;color:var(--concrete)">El equipo aún no ha compartido documentos de su obra.</td></tr>'}
+  </tbody></table></div>
  </div>`;
 };
 

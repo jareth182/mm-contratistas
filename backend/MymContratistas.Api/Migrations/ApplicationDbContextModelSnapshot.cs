@@ -174,6 +174,10 @@ namespace MymContratistas.Api.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("Archivo")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<string>("Clasificacion")
                         .IsRequired()
                         .HasColumnType("text");

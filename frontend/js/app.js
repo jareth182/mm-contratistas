@@ -514,17 +514,18 @@ async function registrarSalida(colabId) {
 // --- DOCUMENTOS ---
 
 async function subirDocumento(obraId) {
+  const aviso = texto => { document.getElementById('doc_error').innerHTML = `<div class="msg bad">${esc(texto)}</div>`; };
   const archivoInput = document.getElementById('nuevo_doc_archivo');
   const clasificacion = document.getElementById('nuevo_doc_clasif').value;
-  const visible = document.getElementById('nuevo_doc_vis').value;
+  const visible = document.getElementById('nuevo_doc_vis').checked;
 
-  if (archivoInput.files.length === 0) {
-    say('bad', 'Debe seleccionar un archivo para subir.');
-    return;
-  }
+  if (archivoInput.files.length === 0) return aviso('Debe seleccionar un archivo para subir.');
+  const archivo = archivoInput.files[0];
+  if (!/\.(pdf|jpe?g|png)$/i.test(archivo.name)) return aviso('Solo se permiten archivos PDF, JPG o PNG.');
+  if (archivo.size > 10 * 1024 * 1024) return aviso('El archivo supera el tamaño máximo de 10 MB.');
 
   const formData = new FormData();
-  formData.append("archivo", archivoInput.files[0]);
+  formData.append("archivo", archivo);
   formData.append("clasificacion", clasificacion);
   formData.append("visibleCliente", visible);
 
@@ -535,10 +536,27 @@ async function subirDocumento(obraId) {
     });
 
     if (respuesta.ok) {
-      say('ok', 'Documento cargado correctamente en la base de datos.');
-      draw(); 
-    } else {
-      say('bad', 'Ocurrió un error al subir el documento.');
+      say('ok', 'Documento cargado correctamente.');
+    } else if (respuesta.status !== 401) {
+      aviso((await respuesta.text()) || 'Ocurrió un error al subir el documento.');
+    }
+  } catch (error) {
+    aviso('Error de conexión con el servidor.');
+  }
+}
+
+async function cambiarVisibilidadDocumento(docId, visible) {
+  try {
+    const respuesta = await apiFetch(`${API}/api/obras/documentos/${docId}/visibilidad`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visibleCliente: visible })
+    });
+
+    if (respuesta.ok) {
+      say('ok', visible ? 'El documento ahora es visible para el cliente.' : 'El documento quedó como uso interno.');
+    } else if (respuesta.status !== 401) {
+      say('bad', esc((await respuesta.text()) || 'No se pudo cambiar la visibilidad.'));
     }
   } catch (error) {
     say('bad', 'Error de conexión con el servidor.');
@@ -546,7 +564,7 @@ async function subirDocumento(obraId) {
 }
 
 async function eliminarDocumento(docId) {
-  if (!confirm("¿Está seguro de eliminar este documento de la obra?")) return;
+  if (!confirm("¿Eliminar este documento de la obra? Esta acción no se puede deshacer.")) return;
 
   try {
     const respuesta = await apiFetch(`${API}/api/obras/documentos/${docId}`, {

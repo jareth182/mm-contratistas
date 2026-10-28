@@ -484,29 +484,66 @@ namespace MymContratistas.Api.Controllers
             return Ok(colaborador);
         }
 
+        public const long TamanoMaximoDocumento = 10 * 1024 * 1024;
+
+        private static string CarpetaDocumentos() => Path.Combine(Directory.GetCurrentDirectory(), "Uploads", "documentos");
+
+        // Ruta del archivo físico; los documentos cargados antes de HU15 se guardaban con su nombre en Uploads
+        internal static string RutaDocumento(Documento doc) => string.IsNullOrEmpty(doc.Archivo)
+            ? Path.Combine(Directory.GetCurrentDirectory(), "Uploads", Path.GetFileName(doc.Nombre))
+            : Path.Combine(CarpetaDocumentos(), doc.Archivo);
+
+        internal static string TipoContenido(string nombre) => Path.GetExtension(nombre).ToLowerInvariant() switch
+        {
+            ".pdf" => "application/pdf",
+            ".png" => "image/png",
+            ".jpg" or ".jpeg" => "image/jpeg",
+            _ => "application/octet-stream"
+        };
+
+        // Devuelve el mensaje de error o null si el archivo es un PDF, JPG o PNG válido de hasta 10 MB
+        private static async Task<string?> ValidarDocumento(IFormFile archivo)
+        {
+            var extension = Path.GetExtension(archivo.FileName).ToLowerInvariant();
+            if (extension != ".pdf" && extension != ".jpg" && extension != ".jpeg" && extension != ".png")
+                return "Solo se permiten archivos PDF, JPG o PNG.";
+            if (archivo.Length > TamanoMaximoDocumento) return "El archivo supera el tamaño máximo de 10 MB.";
+
+            var inicio = new byte[8];
+            await using var lectura = archivo.OpenReadStream();
+            var leidos = await lectura.ReadAsync(inicio.AsMemory(0, inicio.Length));
+            var contenido = inicio.AsSpan(0, leidos).ToArray();
+            var valido = extension == ".pdf"
+                ? leidos >= 4 && contenido[0] == 0x25 && contenido[1] == 0x50 && contenido[2] == 0x44 && contenido[3] == 0x46   // %PDF
+                : PortafolioController.EsImagenValida(contenido, extension);
+            return valido ? null : "El contenido del archivo no corresponde a un PDF, JPG o PNG válido.";
+        }
+
         // POST: api/obras/{obraId}/documentos
         [HttpPost("{obraId}/documentos")]
-        public async Task<IActionResult> SubirDocumento(int obraId, [FromForm] string clasificacion, [FromForm] bool visibleCliente, [FromForm] IFormFile? archivo)
+        public async Task<IActionResult> SubirDocumento(int obraId, [FromForm] string? clasificacion, [FromForm] bool visibleCliente, [FromForm] IFormFile? archivo)
         {
- var obra = await _context.Obras.FindAsync(obraId);
+            var obra = await _context.Obras.FindAsync(obraId);
             if (obra == null) return NotFound("La obra no existe.");
             if (archivo == null || archivo.Length == 0) return BadRequest("Debe adjuntar un archivo.");
 
-            // 1. Guardar el archivo físico en una carpeta "Uploads" en tu servidor
-            var folderPath = Path.Combine(Directory.GetCurrentDirectory(), "Uploads");
-            if (!Directory.Exists(folderPath)) Directory.CreateDirectory(folderPath);
-            
-            var filePath = Path.Combine(folderPath, archivo.FileName);
-            using (var stream = new FileStream(filePath, FileMode.Create))
-            {
-                await archivo.CopyToAsync(stream);
-            }
+            var tipo = Documento.Clasificaciones.FirstOrDefault(c => string.Equals(c, clasificacion?.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (tipo == null) return BadRequest($"Seleccione una clasificación: {string.Join(", ", Documento.Clasificaciones)}.");
 
-            // 2. Guardar el registro en PostgreSQL
+            var error = await ValidarDocumento(archivo);
+            if (error != null) return BadRequest(error);
+
+            // El archivo se guarda con un nombre propio: así no se sobrescriben documentos con el mismo nombre
+            var guardado = $"{Guid.NewGuid():N}{Path.GetExtension(archivo.FileName).ToLowerInvariant()}";
+            Directory.CreateDirectory(CarpetaDocumentos());
+            await using (var destino = new FileStream(Path.Combine(CarpetaDocumentos(), guardado), FileMode.Create))
+                await archivo.CopyToAsync(destino);
+
             var doc = new Documento
             {
-                Nombre = archivo.FileName,
-                Clasificacion = clasificacion,
+                Nombre = Path.GetFileName(archivo.FileName),
+                Archivo = guardado,
+                Clasificacion = tipo,
                 VisibleCliente = visibleCliente,
                 FechaCarga = DateTime.Now.ToString("dd/MM/yyyy"),
                 ObraId = obraId
@@ -518,6 +555,23 @@ namespace MymContratistas.Api.Controllers
             return Ok(doc);
         }
 
+        // PUT: api/obras/documentos/{id}/visibilidad
+        [HttpPut("documentos/{id}/visibilidad")]
+        public async Task<IActionResult> CambiarVisibilidadDocumento(int id, [FromBody] VisibilidadDto dto)
+        {
+            var doc = await _context.Documentos.FindAsync(id);
+            if (doc == null) return NotFound("Documento no encontrado.");
+
+            doc.VisibleCliente = dto.VisibleCliente;
+            await _context.SaveChangesAsync();
+            return Ok(doc);
+        }
+
+        public class VisibilidadDto
+        {
+            public bool VisibleCliente { get; set; }
+        }
+
         // GET: api/obras/documentos/{id}/descargar
         [HttpGet("documentos/{id}/descargar")]
         public async Task<IActionResult> DescargarDocumento(int id)
@@ -525,11 +579,10 @@ namespace MymContratistas.Api.Controllers
             var doc = await _context.Documentos.FindAsync(id);
             if (doc == null) return NotFound("Documento no encontrado.");
 
-            var filePath = Path.Combine(Directory.GetCurrentDirectory(), "Uploads", doc.Nombre);
-            if (!System.IO.File.Exists(filePath)) return NotFound("El archivo físico no se encontró.");
+            var ruta = RutaDocumento(doc);
+            if (!System.IO.File.Exists(ruta)) return NotFound("El archivo físico no se encontró.");
 
-            var bytes = await System.IO.File.ReadAllBytesAsync(filePath);
-            return File(bytes, "application/octet-stream", doc.Nombre);
+            return PhysicalFile(ruta, TipoContenido(doc.Nombre), doc.Nombre);
         }
 
         // DELETE: api/obras/documentos/{id}
@@ -537,10 +590,14 @@ namespace MymContratistas.Api.Controllers
         public async Task<IActionResult> EliminarDocumento(int id)
         {
             var doc = await _context.Documentos.FindAsync(id);
-            if (doc == null) return NotFound();
+            if (doc == null) return NotFound("Documento no encontrado.");
 
+            var ruta = RutaDocumento(doc);
             _context.Documentos.Remove(doc);
             await _context.SaveChangesAsync();
+
+            // Solo se borran los archivos propios de HU15; los antiguos pueden compartir nombre con otros
+            if (!string.IsNullOrEmpty(doc.Archivo) && System.IO.File.Exists(ruta)) System.IO.File.Delete(ruta);
 
             return Ok();
         }
