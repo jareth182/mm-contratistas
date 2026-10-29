@@ -1,5 +1,7 @@
 name: Security scan
 
+# Runs on every PR, on every push to main and every Monday, so new CVEs in
+# existing dependencies are also caught without any code change.
 on:
   pull_request:
   push:
@@ -9,62 +11,108 @@ on:
 
 jobs:
   dependencies:
-    name: NuGet vulnerabilities
+    name: 1. Dependencies (NuGet)
     runs-on: ubuntu-latest
+    outputs:
+      vulnerable: ${{ steps.summary.outputs.vulnerable }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "9.0.x"
-      - name: Scan packages
-        working-directory: backend/MymContratistas.Api
-        run: |
-          dotnet list package --vulnerable --include-transitive | tee report.txt
-          if grep -q "has the following vulnerable packages" report.txt; then
-            STATUS="❌ Vulnerable packages found"; RESULT=1
-          else
-            STATUS="✅ No vulnerable packages"; RESULT=0
-          fi
-          {
-            echo "## Dependency scan (NuGet)"
-            echo "| Check | Result |"
-            echo "|---|---|"
-            echo "| Direct and transitive packages | $STATUS |"
-            echo "| Database | GitHub Advisory Database |"
-            echo
-            echo '```'
-            cat report.txt
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          exit $RESULT
 
-  sast:
-    name: Semgrep
+      - name: What this job does
+        run: |
+          echo "SCA (Software Composition Analysis): checks every NuGet package"
+          echo "(direct and transitive) against the GitHub Advisory Database."
+          echo "Goal: make sure we do not ship libraries with known CVEs."
+
+      - name: Packages in use
+        working-directory: backend/MymContratistas.Api
+        run: dotnet list package --include-transitive
+
+      - name: Scan for known vulnerabilities
+        working-directory: backend/MymContratistas.Api
+        run: dotnet list package --vulnerable --include-transitive --format json > ../../nuget-report.json
+
+      - name: Summary
+        id: summary
+        run: python3 .github/scripts/summarize_nuget.py nuget-report.json nuget-summary.md
+
+      - name: Publish table in run summary
+        if: always()
+        run: cat nuget-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-report
+          path: |
+            nuget-report.json
+            nuget-summary.md
+
+  code:
+    name: 2. Source code (Semgrep)
     runs-on: ubuntu-latest
     container:
       image: semgrep/semgrep
+    outputs:
+      findings: ${{ steps.summary.outputs.findings }}
     steps:
       - uses: actions/checkout@v4
-      - name: Semgrep scan
+
+      - name: What this job does
+        run: |
+          echo "SAST (Static Application Security Testing): reads the source code"
+          echo "without running it and looks for insecure patterns."
+          echo "Rulesets: p/csharp (backend), p/javascript (frontend), p/secrets (hardcoded keys)."
+
+      - name: Run Semgrep
         run: |
           semgrep scan --config p/csharp --config p/javascript --config p/secrets \
             --exclude bin --exclude obj --exclude Migrations \
-            --metrics=off --json -o semgrep.json || true
-          python3 - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
-          import json
-          d = json.load(open("semgrep.json"))
-          r = d["results"]
-          paths = d.get("paths", {}).get("scanned", [])
-          print("## Code scan (Semgrep)")
-          print("| Metric | Value |")
-          print("|---|---|")
-          print(f"| Files scanned | {len(paths)} |")
-          print("| Rulesets | csharp, javascript, secrets |")
-          print(f"| Findings | {len(r)} |")
-          print(f"| Result | {'✅ Clean' if not r else '❌ Findings'} |")
-          if r:
-              print("\n| Severity | Rule | Location |\n|---|---|---|")
-              for f in r:
-                  print(f"| {f['extra']['severity']} | {f['check_id'].split('.')[-1]} | {f['path']}:{f['start']['line']} |")
-          EOF
-          test "$(python3 -c 'import json;print(len(json.load(open("semgrep.json"))["results"]))')" = "0"
+            --metrics=off --json-output=semgrep.json
+
+      - name: Summary
+        id: summary
+        if: always()
+        run: python3 .github/scripts/summarize_semgrep.py semgrep.json semgrep-summary.md
+
+      - name: Publish table in run summary
+        if: always()
+        run: cat semgrep-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-report
+          path: |
+            semgrep.json
+            semgrep-summary.md
+
+  report:
+    name: 3. Final report
+    runs-on: ubuntu-latest
+    needs: [dependencies, code]
+    if: always()
+    steps:
+      - name: Security gate
+        env:
+          VULNERABLE: ${{ needs.dependencies.outputs.vulnerable }}
+          FINDINGS: ${{ needs.code.outputs.findings }}
+        run: |
+          deps="${VULNERABLE:-n/a}"; code="${FINDINGS:-n/a}"
+          ok() { [ "$1" = "0" ] && echo "✅ Pass" || echo "❌ Fail"; }
+          {
+            echo "## Security report"
+            echo
+            echo "| Check | Tool | Issues | Status |"
+            echo "|---|---|---|---|"
+            echo "| Vulnerable dependencies | dotnet list package | $deps | $(ok "$deps") |"
+            echo "| Insecure code / secrets | Semgrep | $code | $(ok "$code") |"
+            echo
+            echo "The job fails (red) if any check has issues."
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$deps" = "0" ] && [ "$code" = "0" ]
