@@ -1013,5 +1013,87 @@ namespace MymContratistas.Api.Controllers
             await _context.SaveChangesAsync();
             return Ok(ProyectarPago(pago));
         }
+
+        // Una partida entra en alerta al llegar al 90 % de su presupuesto y se considera excedida al pasarlo
+        public const decimal UmbralAlerta = 90m;
+
+        public static string EstadoEjecucion(decimal presupuestado, decimal gastado)
+        {
+            if (gastado > presupuestado) return "Excedida";
+            return presupuestado > 0 && gastado / presupuestado * 100 >= UmbralAlerta ? "Alerta" : "Normal";
+        }
+
+        private static object ResumenPartida(Partida p, decimal gastado) => new
+        {
+            id = p.Id,
+            nombre = p.Nombre,
+            presupuestado = p.MontoAsignado,
+            gastado,
+            saldo = p.MontoAsignado - gastado,
+            ejecutado = p.MontoAsignado > 0 ? Math.Round(gastado / p.MontoAsignado * 100, 1) : 0m,
+            estado = EstadoEjecucion(p.MontoAsignado, gastado)
+        };
+
+        // GET: api/obras/{obraId}/control-economico  (presupuestado vs. gastado por partida; no cuenta gastos ni pagos anulados)
+        [HttpGet("{obraId}/control-economico")]
+        public async Task<IActionResult> ControlEconomico(int obraId)
+        {
+            if (!await _context.Obras.AnyAsync(o => o.Id == obraId)) return NotFound("La obra no existe.");
+
+            var partidas = await _context.Partidas.Where(p => p.ObraId == obraId).OrderBy(p => p.Id).ToListAsync();
+            var consumos = await Consumos(obraId);
+            decimal Gastado(Partida p) => consumos.Where(c => c.Partida == p.Nombre && !c.Anulado).Sum(c => c.Monto);
+
+            var presupuestoTotal = partidas.Sum(p => p.MontoAsignado);
+            var gastoAcumulado = partidas.Sum(Gastado);
+            return Ok(new
+            {
+                partidas = partidas.Select(p => ResumenPartida(p, Gastado(p))),
+                totales = new
+                {
+                    presupuestoTotal,
+                    gastoAcumulado,
+                    saldoGeneral = presupuestoTotal - gastoAcumulado,
+                    ejecutado = presupuestoTotal > 0 ? Math.Round(gastoAcumulado / presupuestoTotal * 100, 1) : 0m
+                }
+            });
+        }
+
+        // GET: api/obras/partidas/{id}/detalle  (gastos y pagos de la partida, incluidos los anulados, que no suman al total)
+        [HttpGet("partidas/{id}/detalle")]
+        public async Task<IActionResult> DetallePartida(int id)
+        {
+            var partida = await _context.Partidas.FindAsync(id);
+            if (partida == null) return NotFound("La partida no existe.");
+
+            var gastos = await GastosDe(partida).ToListAsync();
+            var pagos = await PagosDe(partida).ToListAsync();
+            var movimientos = gastos.Select(g => (Orden: FechaOrden(g.Fecha), Id: g.Id, Dato: (object)new
+                {
+                    tipo = "Gasto",
+                    fecha = g.Fecha,
+                    descripcion = g.Concepto,
+                    detalle = g.Proveedor,
+                    monto = g.Monto,
+                    estado = g.Estado,
+                    motivoAnulacion = g.MotivoAnulacion
+                }))
+                .Concat(pagos.Select(x => (Orden: FechaOrden(x.FechaPago), Id: x.Id, Dato: (object)new
+                {
+                    tipo = "Pago",
+                    fecha = x.FechaPago,
+                    descripcion = $"Pago a {x.ColaboradorNombre}",
+                    detalle = x.Periodo,
+                    monto = x.Monto,
+                    estado = x.Estado,
+                    motivoAnulacion = x.MotivoAnulacion
+                })))
+                .OrderByDescending(m => m.Orden).ThenByDescending(m => m.Id)
+                .Select(m => m.Dato)
+                .ToList();
+
+            var gastado = gastos.Where(g => g.Estado != "Anulado").Sum(g => g.Monto) + pagos.Where(x => x.Estado != "Anulado").Sum(x => x.Monto);
+            return Ok(new { partida = ResumenPartida(partida, gastado), movimientos });
+        }
     }
-}
+}
