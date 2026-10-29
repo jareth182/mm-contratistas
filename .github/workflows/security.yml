@@ -1,0 +1,33 @@
+name: Security scan
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"
+
+jobs:
+  dependencies:
+    name: NuGet vulnerabilities
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+      - name: Fail on vulnerable packages
+        working-directory: backend/MymContratistas.Api
+        run: |
+          dotnet list package --vulnerable --include-transitive | tee report.txt
+          if grep -q "has the following vulnerable packages" report.txt; then exit 1; fi
+
+  sast:
+    name: Semgrep
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - name: Semgrep scan
+        run: semgrep scan --config p/csharp --config p/javascript --config p/secrets --exclude bin --exclude obj --exclude Migrations --error --metrics=off
