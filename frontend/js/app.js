@@ -4,7 +4,7 @@ ST.perfil = ST.usuario ? (ST.usuario.rol === 'Cliente' ? 'cli' : 'adm') : 'pub';
 
 /* ================= control ================= */
 function go(v){ST.formUsuario=null;ST.formTrabajador=null;ST.formServicio=null;ST.formHito=null;ST.formProyecto=null;ST.formObra=null;ST.finalizando=false;ST.v=v;ST.msg=null;ST.menu=null;ST.nav=false;draw();window.scrollTo({top:0})}
-function abrirObra(id){ST.obraId=id;ST.formHito=null;ST.hitoEditando=null;ST.registrandoAvance=false;ST.formAvance=null;ST.partidaEditando=null;ST.tab='hitos';go('obra')}
+function abrirObra(id){ST.obraId=id;ST.formHito=null;ST.hitoEditando=null;ST.registrandoAvance=false;ST.formAvance=null;ST.partidaEditando=null;ST.partidaDetalle=null;ST.tab='hitos';go('obra')}
 function tab(t){ST.tab=t;ST.msg=null;draw()}
 function tog(m,e){e.stopPropagation();ST.menu=ST.menu===m?null:m;draw()}
 function say(t,x){ST.msg=`<div class="msg ${t}">${x}</div>`;draw();
@@ -859,6 +859,13 @@ async function anularPago(pagoId) {
   } catch (error) {
     say('bad', 'Error de conexión con el servidor.');
   }
+}
+
+// --- CONTROL ECONÓMICO ---
+
+function verDetallePartida(id) {
+  ST.partidaDetalle = ST.partidaDetalle === id ? null : id;
+  draw();
 }
 
 // --- CONTROL ECONÓMICO (EXPORTAR CON FORMATO EXCEL) ---

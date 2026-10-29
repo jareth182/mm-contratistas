@@ -1009,46 +1009,70 @@ TC.pagos = async () => {
 
 TC.econ = async () => {
   let filas = '';
-  let tp = 0, tg = 0;
-  
-  try {
-    const respuesta = await apiFetch(API + '/api/obras');
-    const obras = await respuesta.json();
-    const obraActual = obras.find(o => o.id === ST.obraId) || null;
-    const partidasReales = obraActual && obraActual.partidas ? obraActual.partidas : [];
-    const gastosReales = [...(obraActual && obraActual.gastos ? obraActual.gastos : []), ...(obraActual && obraActual.pagos ? obraActual.pagos : [])];
+  let resumen = { presupuestoTotal: 0, gastoAcumulado: 0, saldoGeneral: 0, ejecutado: 0 };
+  let detalle = '';
 
-    tp = partidasReales.reduce((sum, p) => sum + p.montoAsignado, 0);
-    
-    filas = partidasReales.map(p => {
-      const gastado = gastosReales.filter(g => g.partidaNombre === p.nombre && g.estado !== 'Anulado').reduce((sum, g) => sum + g.monto, 0);
-      tg += gastado;
-      const pc = p.montoAsignado > 0 ? Math.round(gastado / p.montoAsignado * 100) : 0;
-      const sl = p.montoAsignado - gastado;
-      const cl = pc > 100 ? 'ov' : (pc >= 90 ? 'nr' : '');
-      return `<tr><td><b>${p.nombre}</b> ${pc>100?'<span class="tg bd">Excedida</span>':''}</td>
-       <td class="num">${S(p.montoAsignado)}</td><td class="num">${S(gastado)}</td>
-       <td class="num" style="${sl<0?'color:var(--rust);font-weight:600':''}">${S(sl)}</td>
-       <td><div style="display:flex;align-items:center;gap:9px"><div class="bar ${cl}" style="flex:1"><i style="width:${Math.min(pc,100)}%"></i></div>
-       <span style="font-variant-numeric:tabular-nums;min-width:38px;text-align:right">${pc}%</span></div></td></tr>`;
-    }).join('');
+  try {
+    const respuesta = await apiFetch(`${API}/api/obras/${ST.obraId}/control-economico`);
+    if (!respuesta.ok) throw new Error();
+    const datos = await respuesta.json();
+    resumen = datos.totales;
+
+    if (datos.partidas.length === 0) {
+      filas = `<tr><td colspan="5" style="text-align:center;color:var(--concrete)">No hay partidas presupuestales registradas.</td></tr>`;
+    } else {
+      filas = datos.partidas.map(p => {
+        const cl = p.estado === 'Excedida' ? 'ov' : (p.estado === 'Alerta' ? 'nr' : '');
+        const seleccionada = ST.partidaDetalle === p.id;
+        return `<tr style="${p.estado === 'Alerta' ? 'background:#FFF6DD;' : ''}${seleccionada ? 'outline:2px solid var(--ink);' : ''}">
+         <td><button class="btn link" title="Ver gastos y pagos de la partida" onclick="verDetallePartida(${p.id})"><b>${esc(p.nombre)}</b></button>
+          ${p.estado === 'Excedida' ? '<span class="tg bd">Excedida</span>' : ''}</td>
+         <td class="num">${S(p.presupuestado)}</td><td class="num">${S(p.gastado)}</td>
+         <td class="num" style="${p.saldo < 0 ? 'color:var(--rust);font-weight:600' : ''}">${S(p.saldo)}</td>
+         <td><div style="display:flex;align-items:center;gap:9px"><div class="bar ${cl}" style="flex:1"><i style="width:${Math.min(p.ejecutado, 100)}%"></i></div>
+         <span style="font-variant-numeric:tabular-nums;min-width:48px;text-align:right">${p.ejecutado}%</span></div></td></tr>`;
+      }).join('');
+    }
+
+    if (ST.partidaDetalle) {
+      const r = await apiFetch(`${API}/api/obras/partidas/${ST.partidaDetalle}/detalle`);
+      if (r.ok) {
+        const d = await r.json();
+        const movs = d.movimientos.length === 0
+          ? `<tr><td colspan="6" style="text-align:center;color:var(--concrete)">Esta partida no tiene gastos ni pagos.</td></tr>`
+          : d.movimientos.map(m => `<tr style="${m.estado === 'Anulado' ? 'color:var(--concrete)' : ''}">
+              <td>${esc(m.fecha)}</td><td>${m.tipo}</td><td>${esc(m.descripcion)}</td><td>${esc(m.detalle)}</td>
+              <td class="num" style="${m.estado === 'Anulado' ? 'text-decoration:line-through' : ''}">${S(m.monto)}</td>
+              <td>${m.estado === 'Anulado'
+                ? `<span class="tg bd">Anulado</span>${m.motivoAnulacion ? `<br><span class="hint">${esc(m.motivoAnulacion)}</span>` : ''}`
+                : '<span class="tg ok">Registrado</span>'}</td></tr>`).join('');
+        detalle = `<div class="card" style="margin-top:20px"><div class="ch"><h4>Detalle de «${esc(d.partida.nombre)}»</h4>
+          <button class="btn ghost sm" onclick="verDetallePartida(null)">Cerrar detalle</button></div>
+          <table><thead><tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th>Proveedor / Periodo</th><th class="num">Monto</th><th>Estado</th></tr></thead><tbody>
+          ${movs}
+          </tbody></table>
+          <p class="hint" style="margin:10px 14px">Los movimientos anulados se muestran tachados y no suman al gastado (${S(d.partida.gastado)} de ${S(d.partida.presupuestado)}).</p></div>`;
+      }
+    }
   } catch (error) {
     filas = `<tr><td colspan="5" style="text-align:center;color:var(--rust)">Error de conexión con el servidor.</td></tr>`;
   }
 
+  const tp = resumen.presupuestoTotal, tg = resumen.gastoAcumulado, sg = resumen.saldoGeneral;
   return `<div class="kpi" style="margin-bottom:20px">
   <div><div class="v">${S(tp)}</div><div class="l">Presupuesto total</div></div>
   <div><div class="v">${S(tg)}</div><div class="l">Gasto acumulado</div></div>
-  <div><div class="v" style="color:var(--verde)">${S(tp-tg)}</div><div class="l">Saldo disponible</div></div>
-  <div><div class="v">${tp > 0 ? Math.round(tg/tp*100) : 0}%</div><div class="l">Ejecutado</div></div></div>
- <div class="card"><div class="ch"><span class="hint">Los gastos y pagos anulados no se consideran</span>
+  <div><div class="v" style="color:${sg < 0 ? 'var(--rust)' : 'var(--verde)'}">${S(sg)}</div><div class="l">Saldo general</div></div>
+  <div><div class="v">${resumen.ejecutado}%</div><div class="l">Ejecutado</div></div></div>
+ <div class="card"><div class="ch"><span class="hint">Los gastos y pagos anulados no se consideran · Ámbar: 90 % o más · Excedida: gastado mayor al presupuesto</span>
   <button class="btn ghost sm" onclick="exportarControlEconomico()">Exportar a Excel</button></div>
  <table><thead><tr><th>Partida</th><th class="num">Presupuestado</th><th class="num">Gastado</th><th class="num">Saldo</th><th style="width:160px">Ejecutado</th></tr></thead><tbody>
  ${filas}
  <tr style="background:#F5F7F8"><td><b>Total</b></td><td class="num"><b>${S(tp)}</b></td><td class="num"><b>${S(tg)}</b></td>
-  <td class="num"><b>${S(tp-tg)}</b></td><td></td></tr>
+  <td class="num"><b>${S(sg)}</b></td><td></td></tr>
  </tbody></table></div>
- <p class="hint" style="margin-top:12px">Los porcentajes se calculan automáticamente en base al registro de gastos.</p>`;
+ ${detalle}
+ <p class="hint" style="margin-top:12px">Seleccione una partida para ver sus gastos y pagos. Los porcentajes se calculan automáticamente con el registro de gastos y pagos.</p>`;
 };
 
 /* ---- cliente ---- */
