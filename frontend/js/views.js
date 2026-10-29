@@ -871,24 +871,23 @@ TC.pres = async () => {
 TC.gastos = async () => {
   let filas = '';
   let opcionesPartidas = '';
-  
+
   try {
-    const respuesta = await apiFetch(API + '/api/obras');
-    const obras = await respuesta.json();
-    const obraActual = obras.find(o => o.id === ST.obraId) || null;
-    
-    const gastosReales = obraActual && obraActual.gastos ? obraActual.gastos : [];
-    const partidasReales = obraActual && obraActual.partidas ? obraActual.partidas : [];
+    const respuesta = await apiFetch(`${API}/api/obras/${ST.obraId}/gastos`);
+    if (!respuesta.ok) throw new Error();
+    const datos = await respuesta.json();
+    const gastos = datos.gastos || [];
+    const partidas = datos.partidas || [];
 
-    const gastosInvertidos = [...gastosReales].reverse();
-
-    if (gastosInvertidos.length === 0) {
+    if (gastos.length === 0) {
       filas = `<tr><td colspan="7" style="text-align:center;color:var(--concrete)">No hay gastos registrados.</td></tr>`;
     } else {
-      filas = gastosInvertidos.map(g => `<tr style="${g.estado === 'Anulado' ? 'color:var(--concrete)' : ''}">
-        <td>${g.fecha}</td><td>${g.concepto}</td><td>${g.partidaNombre}</td><td>${g.proveedor}</td>
+      filas = gastos.map(g => `<tr style="${g.estado === 'Anulado' ? 'color:var(--concrete)' : ''}">
+        <td>${esc(g.fecha)}</td><td>${esc(g.concepto)}</td><td>${esc(g.partidaNombre)}</td><td>${esc(g.proveedor)}</td>
         <td class="num">${S(g.monto)}</td>
-        <td>${g.estado === 'Anulado' ? '<span class="tg bd">Anulado</span>' : '<span class="tg ok">Registrado</span>'}</td>
+        <td>${g.estado === 'Anulado'
+          ? `<span class="tg bd">Anulado</span>${g.motivoAnulacion ? `<br><span class="hint">${esc(g.motivoAnulacion)}</span>` : ''}`
+          : '<span class="tg ok">Registrado</span>'}</td>
         <td style="width:130px; line-height:2;">
           ${g.comprobanteUrl ? `<button class="btn link sm" onclick="descargarComprobante(${g.id})">Comprobante</button>` : '<span class="hint">Sin comprobante</span>'}
           ${g.estado !== 'Anulado' ? `<br><button class="btn link sm" style="color:var(--rust)" onclick="anularGasto(${g.id})">Anular gasto</button>` : ''}
@@ -896,40 +895,40 @@ TC.gastos = async () => {
       </tr>`).join('');
     }
 
-    if(partidasReales.length === 0) {
-        opcionesPartidas = '<option value="">Debe crear partidas en Presupuesto primero</option>';
+    if (partidas.length === 0) {
+      opcionesPartidas = '<option value="">Debe crear partidas en Presupuesto primero</option>';
     } else {
-        opcionesPartidas = partidasReales.map(p => {
-            const gastado = gastosReales.filter(g => g.partidaNombre === p.nombre && g.estado !== 'Anulado').reduce((sum, g) => sum + g.monto, 0);
-            const saldo = p.montoAsignado - gastado;
-            return `<option value="${p.nombre}">${p.nombre} — saldo ${S(saldo)}</option>`;
-        }).join('');
+      opcionesPartidas = partidas.map(p =>
+        `<option value="${esc(p.nombre)}">${esc(p.nombre)} — saldo ${S(p.saldo)}</option>`).join('');
     }
   } catch (error) {
     filas = `<tr><td colspan="7" style="text-align:center;color:var(--rust)">Error al cargar los gastos desde el servidor.</td></tr>`;
+    opcionesPartidas = '<option value="">No se pudieron cargar las partidas</option>';
   }
+
+  const hoy = new Date();
+  const hoyIso = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
 
   return `<div class="card"><div class="ch"><span class="hint">Del más reciente al más antiguo</span>
    <button class="btn sm" onclick="document.getElementById('form_gasto').scrollIntoView({behavior: 'smooth'})">Nuevo gasto</button></div>
    <table><thead><tr><th>Fecha</th><th>Concepto</th><th>Partida</th><th>Proveedor</th><th class="num">Monto</th><th>Estado</th><th></th></tr></thead><tbody>
    ${filas}
    </tbody></table></div>
-   
+
    <div id="form_gasto" class="card" style="margin-top:20px"><div class="ch"><h4>Nuevo gasto</h4>${ST.hu?'<span class="hu">HU17</span>':''}</div><div class="cb">
-    <div class="g3"><div class="f"><label>Fecha</label><input id="gasto_fecha" value="14/09/2026"></div>
+    <div class="g3"><div class="f"><label>Fecha</label><input id="gasto_fecha" type="date" value="${hoyIso}"></div>
      <div class="f"><label>Tipo de comprobante</label><select id="gasto_tipo"><option>Factura</option><option>Boleta</option><option>Recibo por honorarios</option><option>Otro</option></select></div>
-     <div class="f"><label>Número</label><input id="gasto_numero" placeholder="F001-004512"></div></div>
-    <div class="f"><label>Concepto</label><input id="gasto_concepto" placeholder="Cemento Sol tipo I — 180 bolsas"></div>
-    <div class="g3"><div class="f"><label>Proveedor</label><input id="gasto_proveedor" placeholder="Distribuidora Andina"></div>
+     <div class="f"><label>Número</label><input id="gasto_numero" maxlength="30" placeholder="F001-004512"></div></div>
+    <div class="f"><label>Concepto</label><input id="gasto_concepto" maxlength="200" placeholder="Cemento Sol tipo I — 180 bolsas"></div>
+    <div class="g3"><div class="f"><label>Proveedor</label><input id="gasto_proveedor" maxlength="100" placeholder="Distribuidora Andina"></div>
      <div class="f"><label>Partida</label><select id="gasto_partida">${opcionesPartidas}</select></div>
-     <div class="f"><label>Monto</label><input id="gasto_monto" type="number" placeholder="5940.00"></div></div>
-    <div class="f"><label>Comprobante</label><div class="thumbs">
-     <input type="file" id="gasto_archivo" style="display:none" accept="image/*,.pdf" onchange="document.getElementById('nombre_comprobante').innerText = this.files[0] ? this.files[0].name : ''">
+     <div class="f"><label>Monto</label><input id="gasto_monto" type="number" min="0.01" step="0.01" placeholder="5940.00"></div></div>
+    <div class="f"><label>Comprobante (obligatorio)</label><div class="thumbs">
+     <input type="file" id="gasto_archivo" style="display:none" accept=".pdf,.jpg,.jpeg,.png" onchange="document.getElementById('nombre_comprobante').innerText = this.files[0] ? this.files[0].name : ''">
      <button class="btn ghost sm" onclick="document.getElementById('gasto_archivo').click()">Adjuntar comprobante</button>
      <span id="nombre_comprobante" class="hint" style="margin-left:10px;"></span>
      </div></div>
-    <button class="btn" onclick="registrarGasto(1, true)">Registrar</button>
-    <button class="btn ghost" onclick="registrarGasto(1, false)">Registrar sin comprobante</button>
+    <button class="btn" onclick="registrarGasto(ST.obraId)">Registrar</button>
    </div></div>`;
 };
 

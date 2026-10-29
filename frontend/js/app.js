@@ -661,49 +661,48 @@ async function eliminarPartida(partidaId) {
 
 // --- GASTOS ---
 
-async function registrarGasto(obraId, requiereComprobante) {
-  const fecha = document.getElementById('gasto_fecha').value;
+async function registrarGasto(obraId) {
+  const fechaIso = document.getElementById('gasto_fecha').value;
   const tipo = document.getElementById('gasto_tipo').value;
   const numero = document.getElementById('gasto_numero').value;
-  const concepto = document.getElementById('gasto_concepto').value;
+  const concepto = document.getElementById('gasto_concepto').value.trim();
   const proveedor = document.getElementById('gasto_proveedor').value;
   const partida = document.getElementById('gasto_partida').value;
   const montoStr = document.getElementById('gasto_monto').value;
   const archivoInput = document.getElementById('gasto_archivo');
 
   if (!partida) {
-     say('bad', 'Debe registrar al menos una Partida en el presupuesto antes de agregar gastos.');
-     return;
-  }
-
-  if (!concepto || !montoStr) {
-    say('bad', 'El concepto y el monto son obligatorios.');
+    say('bad', 'Debe registrar al menos una Partida en el presupuesto antes de agregar gastos.');
     return;
   }
-  
-  if (requiereComprobante && archivoInput.files.length === 0) {
-    say('bad', 'Debe adjuntar la imagen o el archivo del comprobante para registrar el gasto.');
+  if (!fechaIso) {
+    say('bad', 'Ingrese la fecha del gasto.');
     return;
   }
-
+  if (!concepto) {
+    say('bad', 'El concepto es obligatorio.');
+    return;
+  }
   const monto = parseFloat(montoStr);
   if (isNaN(monto) || monto <= 0) {
     say('bad', 'Monto inválido. Debe ser mayor a 0.');
     return;
   }
+  if (archivoInput.files.length === 0) {
+    say('bad', 'Debe adjuntar el comprobante (imagen o PDF) para registrar el gasto.');
+    return;
+  }
 
+  const [anio, mes, dia] = fechaIso.split('-');
   const formData = new FormData();
-  formData.append("fecha", fecha);
+  formData.append("fecha", `${dia}/${mes}/${anio}`);
   formData.append("tipo", tipo);
   formData.append("numero", numero);
   formData.append("concepto", concepto);
   formData.append("proveedor", proveedor);
   formData.append("partidaNombre", partida);
   formData.append("monto", monto);
-  
-  if (archivoInput.files.length > 0) {
-    formData.append("archivo", archivoInput.files[0]);
-  }
+  formData.append("archivo", archivoInput.files[0]);
 
   try {
     const respuesta = await apiFetch(`${API}/api/obras/${obraId}/gastos`, {
@@ -713,9 +712,9 @@ async function registrarGasto(obraId, requiereComprobante) {
 
     if (respuesta.ok) {
       say('ok', 'Gasto registrado correctamente.');
-      draw(); 
+      draw();
     } else {
-      say('bad', 'Ocurrió un error al registrar el gasto.');
+      say('bad', esc((await respuesta.text()) || 'Ocurrió un error al registrar el gasto.'));
     }
   } catch (error) {
     say('bad', 'Error de conexión con el servidor.');
@@ -727,18 +726,25 @@ function descargarComprobante(gastoId) {
 }
 
 async function anularGasto(gastoId) {
-  if (!confirm("¿Está seguro de que desea anular este gasto? El monto se devolverá al saldo de la partida.")) return;
+  const motivo = prompt('Indique el motivo de la anulación. El monto se devolverá al saldo de la partida.');
+  if (motivo === null) return;
+  if (!motivo.trim()) {
+    say('bad', 'Indique el motivo de la anulación.');
+    return;
+  }
 
   try {
     const respuesta = await apiFetch(`${API}/api/obras/gastos/${gastoId}/anular`, {
-      method: 'PUT'
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ motivo: motivo.trim() })
     });
 
     if (respuesta.ok) {
       say('ok', 'Gasto anulado correctamente.');
-      draw(); 
+      draw();
     } else {
-      say('bad', 'Ocurrió un error al anular el gasto.');
+      say('bad', esc((await respuesta.text()) || 'Ocurrió un error al anular el gasto.'));
     }
   } catch (error) {
     say('bad', 'Error de conexión con el servidor.');

@@ -237,6 +237,10 @@ namespace MymContratistas.Api.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("Archivo")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<string>("ComprobanteUrl")
                         .HasColumnType("text");
 
@@ -252,8 +256,14 @@ namespace MymContratistas.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<DateTime?>("FechaAnulacion")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<decimal>("Monto")
                         .HasColumnType("numeric");
+
+                    b.Property<string>("MotivoAnulacion")
+                        .HasColumnType("text");
 
                     b.Property<string>("NumeroComprobante")
                         .IsRequired()

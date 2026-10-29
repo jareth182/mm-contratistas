@@ -725,36 +725,109 @@ namespace MymContratistas.Api.Controllers
             return Ok();
         }
 
+        public const decimal MontoMaximoGasto = 999_999_999.99m;
+        public const string FormatoFechaGasto = "dd/MM/yyyy";
+
+        private static string CarpetaGastos() => Path.Combine(Directory.GetCurrentDirectory(), "Uploads", "gastos");
+
+        // Los gastos anteriores a HU17 guardaban el comprobante con su nombre original en Uploads
+        public static string RutaComprobante(Gasto g) => string.IsNullOrEmpty(g.Archivo)
+            ? Path.Combine(Directory.GetCurrentDirectory(), "Uploads", Path.GetFileName(g.ComprobanteUrl ?? string.Empty))
+            : Path.Combine(CarpetaGastos(), g.Archivo);
+
+        private static DateTime FechaOrden(string fecha) =>
+            DateTime.TryParseExact(fecha, new[] { FormatoFechaGasto, "yyyy-MM-dd" }, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var f) ? f : DateTime.MinValue;
+
+        private static object ProyectarGasto(Gasto g) => new
+        {
+            id = g.Id,
+            fecha = g.Fecha,
+            tipoComprobante = g.TipoComprobante,
+            numeroComprobante = g.NumeroComprobante,
+            concepto = g.Concepto,
+            proveedor = g.Proveedor,
+            partidaNombre = g.PartidaNombre,
+            monto = g.Monto,
+            estado = g.Estado,
+            comprobanteUrl = g.ComprobanteUrl,
+            motivoAnulacion = g.MotivoAnulacion,
+            fechaAnulacion = g.FechaAnulacion
+        };
+
+        // GET: api/obras/{obraId}/gastos  (del más reciente al más antiguo, con el saldo de cada partida)
+        [HttpGet("{obraId}/gastos")]
+        public async Task<IActionResult> ListarGastos(int obraId)
+        {
+            if (!await _context.Obras.AnyAsync(o => o.Id == obraId)) return NotFound("La obra no existe.");
+
+            var gastos = await _context.Gastos.Where(g => g.ObraId == obraId).ToListAsync();
+            var partidas = await _context.Partidas.Where(p => p.ObraId == obraId).OrderBy(p => p.Id).ToListAsync();
+            return Ok(new
+            {
+                gastos = gastos.OrderByDescending(g => FechaOrden(g.Fecha)).ThenByDescending(g => g.Id).Select(ProyectarGasto),
+                partidas = partidas.Select(p => new
+                {
+                    id = p.Id,
+                    nombre = p.Nombre,
+                    montoAsignado = p.MontoAsignado,
+                    saldo = p.MontoAsignado - gastos.Where(g => g.PartidaNombre == p.Nombre && g.Estado != "Anulado").Sum(g => g.Monto)
+                })
+            });
+        }
+
         // POST: api/obras/{obraId}/gastos
         [HttpPost("{obraId}/gastos")]
-        public async Task<IActionResult> RegistrarGasto(int obraId, [FromForm] string fecha, [FromForm] string tipo, [FromForm] string numero, [FromForm] string concepto, [FromForm] string proveedor, [FromForm] string partidaNombre, [FromForm] decimal monto, [FromForm] IFormFile? archivo)
+        public async Task<IActionResult> RegistrarGasto(int obraId, [FromForm] string? fecha, [FromForm] string? tipo, [FromForm] string? numero, [FromForm] string? concepto, [FromForm] string? proveedor, [FromForm] string? partidaNombre, [FromForm] decimal monto, [FromForm] IFormFile? archivo)
         {
-            var obra = await _context.Obras.FindAsync(obraId);
-            if (obra == null) return NotFound("La obra no existe.");
+            if (!await _context.Obras.AnyAsync(o => o.Id == obraId)) return NotFound("La obra no existe.");
+
+            concepto = concepto?.Trim() ?? string.Empty;
+            proveedor = proveedor?.Trim() ?? string.Empty;
+            numero = numero?.Trim() ?? string.Empty;
+            tipo = tipo?.Trim() ?? string.Empty;
+
+            if (!DateTime.TryParseExact(fecha?.Trim(), FormatoFechaGasto, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _))
+                return BadRequest("Ingrese una fecha válida (dd/mm/aaaa).");
+            if (concepto.Length == 0) return BadRequest("El concepto es obligatorio.");
+            if (concepto.Length > 200) return BadRequest("El concepto no puede superar los 200 caracteres.");
+            if (proveedor.Length > 100) return BadRequest("El proveedor no puede superar los 100 caracteres.");
+            if (numero.Length > 30) return BadRequest("El número de comprobante no puede superar los 30 caracteres.");
+            if (tipo.Length > 50) return BadRequest("El tipo de comprobante no puede superar los 50 caracteres.");
+            if (monto <= 0) return BadRequest("El monto debe ser mayor a 0.");
+            if (monto > MontoMaximoGasto) return BadRequest("El monto es demasiado grande.");
+            if (string.IsNullOrWhiteSpace(partidaNombre)) return BadRequest("Seleccione la partida del gasto.");
+
+            var partida = await _context.Partidas.FirstOrDefaultAsync(p => p.ObraId == obraId && p.Nombre == partidaNombre);
+            if (partida == null) return BadRequest("La partida seleccionada no existe en esta obra.");
+
+            if (archivo == null || archivo.Length == 0)
+                return BadRequest("Debe adjuntar el comprobante (PDF, JPG o PNG) para registrar el gasto.");
+            var errorArchivo = await ValidarDocumento(archivo);
+            if (errorArchivo != null) return BadRequest(errorArchivo);
+
+            var gastado = await _context.Gastos
+                .Where(g => g.ObraId == obraId && g.PartidaNombre == partida.Nombre && g.Estado != "Anulado")
+                .Select(g => g.Monto).ToListAsync();
+            var saldo = partida.MontoAsignado - gastado.Sum();
+            if (monto > saldo)
+                return BadRequest($"El monto supera el saldo disponible de la partida «{partida.Nombre}» (S/ {saldo:N2}).");
+
+            var guardado = Guid.NewGuid().ToString("N") + Path.GetExtension(archivo.FileName).ToLowerInvariant();
+            Directory.CreateDirectory(CarpetaGastos());
+            await using (var destino = new FileStream(Path.Combine(CarpetaGastos(), guardado), FileMode.Create))
+                await archivo.CopyToAsync(destino);
 
             var gasto = new Gasto
             {
-                Fecha = fecha, TipoComprobante = tipo ?? "", NumeroComprobante = numero ?? "",
-                Concepto = concepto, Proveedor = proveedor ?? "", PartidaNombre = partidaNombre,
-                Monto = monto, ObraId = obraId, Estado = "Registrado"
+                Fecha = fecha!.Trim(), TipoComprobante = tipo, NumeroComprobante = numero,
+                Concepto = concepto, Proveedor = proveedor, PartidaNombre = partida.Nombre,
+                Monto = monto, ObraId = obraId, Estado = "Registrado",
+                ComprobanteUrl = Path.GetFileName(archivo.FileName), Archivo = guardado
             };
-
-            // Si viene un archivo, lo guardamos en la carpeta Uploads
-            if (archivo != null && archivo.Length > 0)
-            {
-                var folderPath = Path.Combine(Directory.GetCurrentDirectory(), "Uploads");
-                if (!Directory.Exists(folderPath)) Directory.CreateDirectory(folderPath);
-                var filePath = Path.Combine(folderPath, archivo.FileName);
-                using (var stream = new FileStream(filePath, FileMode.Create))
-                {
-                    await archivo.CopyToAsync(stream);
-                }
-                gasto.ComprobanteUrl = archivo.FileName;
-            }
-
             _context.Gastos.Add(gasto);
             await _context.SaveChangesAsync();
-            return Ok(gasto);
+            return Ok(ProyectarGasto(gasto));
         }
 
         // GET: api/obras/gastos/{id}/descargar
@@ -763,23 +836,35 @@ namespace MymContratistas.Api.Controllers
         {
             var gasto = await _context.Gastos.FindAsync(id);
             if (gasto == null || string.IsNullOrEmpty(gasto.ComprobanteUrl)) return NotFound();
-            var filePath = Path.Combine(Directory.GetCurrentDirectory(), "Uploads", gasto.ComprobanteUrl);
-            if (!System.IO.File.Exists(filePath)) return NotFound();
-            var bytes = await System.IO.File.ReadAllBytesAsync(filePath);
-            return File(bytes, "application/octet-stream", gasto.ComprobanteUrl);
+            var ruta = RutaComprobante(gasto);
+            if (!System.IO.File.Exists(ruta)) return NotFound();
+            return PhysicalFile(ruta, TipoContenido(gasto.ComprobanteUrl), gasto.ComprobanteUrl);
         }
 
-        // PUT: api/obras/gastos/{id}/anular
+        public class AnulacionDto
+        {
+            public string? Motivo { get; set; }
+        }
+
+        // PUT: api/obras/gastos/{id}/anular  (el gasto se conserva como Anulado y su monto vuelve al saldo de la partida)
         [HttpPut("gastos/{id}/anular")]
-        public async Task<IActionResult> AnularGasto(int id)
+        public async Task<IActionResult> AnularGasto(int id, [FromBody] AnulacionDto? dto)
         {
             var gasto = await _context.Gastos.FindAsync(id);
-            if (gasto == null) return NotFound();
-            
-            gasto.Estado = "Anulado"; // Al anularlo, el frontend recalculará el saldo de la partida
+            if (gasto == null) return NotFound("El gasto no existe.");
+            if (gasto.Estado == "Anulado") return BadRequest("El gasto ya está anulado.");
+
+            var motivo = dto?.Motivo?.Trim() ?? string.Empty;
+            if (motivo.Length == 0) return BadRequest("Indique el motivo de la anulación.");
+            if (motivo.Length > 300) return BadRequest("El motivo no puede superar los 300 caracteres.");
+
+            gasto.Estado = "Anulado";
+            gasto.MotivoAnulacion = motivo;
+            gasto.FechaAnulacion = DateTime.UtcNow;
             await _context.SaveChangesAsync();
-            return Ok();
+            return Ok(ProyectarGasto(gasto));
         }
+
         // POST: api/obras/{obraId}/pagos
         [HttpPost("{obraId}/pagos")]
         public async Task<IActionResult> RegistrarPago(int obraId, [FromForm] string colaboradorNombre, [FromForm] string periodo, [FromForm] decimal monto, [FromForm] string fechaPago, [FromForm] IFormFile? archivo)
