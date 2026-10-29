@@ -614,6 +614,24 @@ namespace MymContratistas.Api.Controllers
         private IQueryable<Gasto> GastosDe(Partida p) =>
             _context.Gastos.Where(g => g.ObraId == p.ObraId && g.PartidaNombre == p.Nombre);
 
+        private IQueryable<Pago> PagosDe(Partida p) =>
+            _context.Pagos.Where(x => x.ObraId == p.ObraId && x.PartidaNombre == p.Nombre);
+
+        private record Consumo(string Partida, decimal Monto, bool Anulado);
+
+        // Gastos y pagos al personal de la obra: ambos descuentan el saldo de su partida mientras no estén anulados
+        private async Task<List<Consumo>> Consumos(int obraId)
+        {
+            var gastos = await _context.Gastos.Where(g => g.ObraId == obraId)
+                .Select(g => new Consumo(g.PartidaNombre, g.Monto, g.Estado == "Anulado")).ToListAsync();
+            var pagos = await _context.Pagos.Where(x => x.ObraId == obraId)
+                .Select(x => new Consumo(x.PartidaNombre, x.Monto, x.Estado == "Anulado")).ToListAsync();
+            return gastos.Concat(pagos).ToList();
+        }
+
+        private static decimal Saldo(Partida p, IEnumerable<Consumo> consumos) =>
+            p.MontoAsignado - consumos.Where(c => c.Partida == p.Nombre && !c.Anulado).Sum(c => c.Monto);
+
         private static object Proyectar(Partida p, int gastosAsociados, decimal gastado) => new
         {
             id = p.Id,
@@ -647,14 +665,14 @@ namespace MymContratistas.Api.Controllers
             if (!await _context.Obras.AnyAsync(o => o.Id == obraId)) return NotFound("La obra no existe.");
 
             var partidas = await _context.Partidas.Where(p => p.ObraId == obraId).OrderBy(p => p.Id).ToListAsync();
-            var gastos = await _context.Gastos.Where(g => g.ObraId == obraId).ToListAsync();
+            var consumos = await Consumos(obraId);
             return Ok(new
             {
                 montoTotal = partidas.Sum(p => p.MontoAsignado),
                 partidas = partidas.Select(p =>
                 {
-                    var propios = gastos.Where(g => g.PartidaNombre == p.Nombre).ToList();
-                    return Proyectar(p, propios.Count, propios.Where(g => g.Estado != "Anulado").Sum(g => g.Monto));
+                    var propios = consumos.Where(c => c.Partida == p.Nombre).ToList();
+                    return Proyectar(p, propios.Count, propios.Where(c => !c.Anulado).Sum(c => c.Monto));
                 })
             });
         }
@@ -693,19 +711,22 @@ namespace MymContratistas.Api.Controllers
             if (error != null) return BadRequest(error);
 
             var gastos = await GastosDe(partida).ToListAsync();
-            var gastado = gastos.Where(g => g.Estado != "Anulado").Sum(g => g.Monto);
+            var pagos = await PagosDe(partida).ToListAsync();
+            var gastado = gastos.Where(g => g.Estado != "Anulado").Sum(g => g.Monto)
+                + pagos.Where(x => x.Estado != "Anulado").Sum(x => x.Monto);
             if (dto.MontoAsignado < gastado)
                 return BadRequest($"El monto no puede ser menor a lo ya gastado en la partida (S/ {gastado:N2}).");
 
             // Los gastos siguen a la partida si cambia de nombre
             var nombre = dto.Nombre!.Trim();
             foreach (var gasto in gastos) gasto.PartidaNombre = nombre;
+            foreach (var pago in pagos) pago.PartidaNombre = nombre;
             partida.Nombre = nombre;
             partida.Descripcion = dto.Descripcion?.Trim() ?? string.Empty;
             partida.MontoAsignado = dto.MontoAsignado;
             await _context.SaveChangesAsync();
 
-            return Ok(Proyectar(partida, gastos.Count, gastado));
+            return Ok(Proyectar(partida, gastos.Count + pagos.Count, gastado));
         }
 
         // DELETE: api/obras/partidas/{id}
@@ -715,9 +736,9 @@ namespace MymContratistas.Api.Controllers
             var partida = await _context.Partidas.FindAsync(id);
             if (partida == null) return NotFound("La partida no existe.");
 
-            var gastos = await GastosDe(partida).CountAsync();
+            var gastos = await GastosDe(partida).CountAsync() + await PagosDe(partida).CountAsync();
             if (gastos > 0)
-                return BadRequest($"No se puede eliminar la partida «{partida.Nombre}»: tiene {gastos} gasto(s) asociado(s).");
+                return BadRequest($"No se puede eliminar la partida «{partida.Nombre}»: tiene {gastos} gasto(s) o pago(s) asociado(s).");
 
             _context.Partidas.Remove(partida);
             await _context.SaveChangesAsync();
@@ -763,6 +784,7 @@ namespace MymContratistas.Api.Controllers
 
             var gastos = await _context.Gastos.Where(g => g.ObraId == obraId).ToListAsync();
             var partidas = await _context.Partidas.Where(p => p.ObraId == obraId).OrderBy(p => p.Id).ToListAsync();
+            var consumos = await Consumos(obraId);
             return Ok(new
             {
                 gastos = gastos.OrderByDescending(g => FechaOrden(g.Fecha)).ThenByDescending(g => g.Id).Select(ProyectarGasto),
@@ -771,7 +793,7 @@ namespace MymContratistas.Api.Controllers
                     id = p.Id,
                     nombre = p.Nombre,
                     montoAsignado = p.MontoAsignado,
-                    saldo = p.MontoAsignado - gastos.Where(g => g.PartidaNombre == p.Nombre && g.Estado != "Anulado").Sum(g => g.Monto)
+                    saldo = Saldo(p, consumos)
                 })
             });
         }
@@ -806,10 +828,7 @@ namespace MymContratistas.Api.Controllers
             var errorArchivo = await ValidarDocumento(archivo);
             if (errorArchivo != null) return BadRequest(errorArchivo);
 
-            var gastado = await _context.Gastos
-                .Where(g => g.ObraId == obraId && g.PartidaNombre == partida.Nombre && g.Estado != "Anulado")
-                .Select(g => g.Monto).ToListAsync();
-            var saldo = partida.MontoAsignado - gastado.Sum();
+            var saldo = Saldo(partida, await Consumos(obraId));
             if (monto > saldo)
                 return BadRequest($"El monto supera el saldo disponible de la partida «{partida.Nombre}» (S/ {saldo:N2}).");
 
@@ -865,39 +884,104 @@ namespace MymContratistas.Api.Controllers
             return Ok(ProyectarGasto(gasto));
         }
 
+        private static string CarpetaPagos() => Path.Combine(Directory.GetCurrentDirectory(), "Uploads", "pagos");
+
+        // Los pagos anteriores a HU18 guardaban la constancia con su nombre original en Uploads
+        public static string RutaConstancia(Pago p) => string.IsNullOrEmpty(p.Archivo)
+            ? Path.Combine(Directory.GetCurrentDirectory(), "Uploads", Path.GetFileName(p.ConstanciaUrl ?? string.Empty))
+            : Path.Combine(CarpetaPagos(), p.Archivo);
+
+        private static object ProyectarPago(Pago p) => new
+        {
+            id = p.Id,
+            colaboradorId = p.ColaboradorId,
+            colaboradorNombre = p.ColaboradorNombre,
+            periodo = p.Periodo,
+            monto = p.Monto,
+            fechaPago = p.FechaPago,
+            estado = p.Estado,
+            partidaNombre = p.PartidaNombre,
+            constanciaUrl = p.ConstanciaUrl,
+            motivoAnulacion = p.MotivoAnulacion,
+            fechaAnulacion = p.FechaAnulacion
+        };
+
+        private static bool EsManoDeObra(Partida p) =>
+            string.Equals(p.Nombre, Pago.PartidaManoDeObra, StringComparison.OrdinalIgnoreCase);
+
+        // GET: api/obras/{obraId}/pagos  (del más reciente al más antiguo, con la cuadrilla activa y el saldo de mano de obra)
+        [HttpGet("{obraId}/pagos")]
+        public async Task<IActionResult> ListarPagos(int obraId)
+        {
+            if (!await _context.Obras.AnyAsync(o => o.Id == obraId)) return NotFound("La obra no existe.");
+
+            var pagos = await _context.Pagos.Where(p => p.ObraId == obraId).ToListAsync();
+            var cuadrilla = await _context.Cuadrilla.Where(c => c.ObraId == obraId && c.FechaSalida == null).OrderBy(c => c.NombreCompleto).ToListAsync();
+            var partidas = await _context.Partidas.Where(p => p.ObraId == obraId).ToListAsync();
+            var manoDeObra = partidas.FirstOrDefault(EsManoDeObra);
+            return Ok(new
+            {
+                pagos = pagos.OrderByDescending(p => FechaOrden(p.FechaPago)).ThenByDescending(p => p.Id).Select(ProyectarPago),
+                colaboradores = cuadrilla.Select(c => new { id = c.Id, nombreCompleto = c.NombreCompleto, especialidad = c.Especialidad, jornal = c.Jornal }),
+                partida = manoDeObra == null ? null : new { nombre = manoDeObra.Nombre, saldo = Saldo(manoDeObra, await Consumos(obraId)) }
+            });
+        }
+
         // POST: api/obras/{obraId}/pagos
         [HttpPost("{obraId}/pagos")]
-        public async Task<IActionResult> RegistrarPago(int obraId, [FromForm] string colaboradorNombre, [FromForm] string periodo, [FromForm] decimal monto, [FromForm] string fechaPago, [FromForm] IFormFile? archivo)
+        public async Task<IActionResult> RegistrarPago(int obraId, [FromForm] int colaboradorId, [FromForm] string? periodoDesde, [FromForm] string? periodoHasta, [FromForm] decimal monto, [FromForm] string? fechaPago, [FromForm] IFormFile? archivo)
         {
-            var obra = await _context.Obras.FindAsync(obraId);
-            if (obra == null) return NotFound("La obra no existe.");
+            if (!await _context.Obras.AnyAsync(o => o.Id == obraId)) return NotFound("La obra no existe.");
+
+            var colaborador = await _context.Cuadrilla.FirstOrDefaultAsync(c => c.Id == colaboradorId && c.ObraId == obraId);
+            if (colaborador == null) return BadRequest("Seleccione un colaborador de la cuadrilla de esta obra.");
+            if (colaborador.FechaSalida != null) return BadRequest("El colaborador ya salió de la cuadrilla de esta obra.");
+
+            var formatos = System.Globalization.CultureInfo.InvariantCulture;
+            if (!DateTime.TryParseExact(periodoDesde?.Trim(), FormatoFechaGasto, formatos, System.Globalization.DateTimeStyles.None, out var desde)
+                || !DateTime.TryParseExact(periodoHasta?.Trim(), FormatoFechaGasto, formatos, System.Globalization.DateTimeStyles.None, out var hasta))
+                return BadRequest("Ingrese el periodo pagado (dd/mm/aaaa).");
+            if (hasta < desde) return BadRequest("El fin del periodo no puede ser anterior al inicio.");
+            if (!DateTime.TryParseExact(fechaPago?.Trim(), FormatoFechaGasto, formatos, System.Globalization.DateTimeStyles.None, out _))
+                return BadRequest("Ingrese una fecha de pago válida (dd/mm/aaaa).");
+
+            if (monto <= 0) return BadRequest("El monto debe ser mayor a 0.");
+            if (monto > MontoMaximoGasto) return BadRequest("El monto es demasiado grande.");
+
+            if (archivo == null || archivo.Length == 0)
+                return BadRequest("Debe adjuntar la constancia (PDF, JPG o PNG) para registrar el pago.");
+            var errorArchivo = await ValidarDocumento(archivo);
+            if (errorArchivo != null) return BadRequest(errorArchivo);
+
+            var partida = await _context.Partidas.Where(p => p.ObraId == obraId).ToListAsync();
+            var manoDeObra = partida.FirstOrDefault(EsManoDeObra);
+            if (manoDeObra == null)
+                return BadRequest($"Registre la partida «{Pago.PartidaManoDeObra}» en el presupuesto antes de pagar al personal.");
+            var saldo = Saldo(manoDeObra, await Consumos(obraId));
+            if (monto > saldo)
+                return BadRequest($"El monto supera el saldo disponible de la partida «{manoDeObra.Nombre}» (S/ {saldo:N2}).");
+
+            var guardado = Guid.NewGuid().ToString("N") + Path.GetExtension(archivo.FileName).ToLowerInvariant();
+            Directory.CreateDirectory(CarpetaPagos());
+            await using (var destino = new FileStream(Path.Combine(CarpetaPagos(), guardado), FileMode.Create))
+                await archivo.CopyToAsync(destino);
 
             var pago = new Pago
             {
-                ColaboradorNombre = colaboradorNombre,
-                Periodo = periodo,
+                ColaboradorId = colaborador.Id,
+                ColaboradorNombre = colaborador.NombreCompleto,
+                Periodo = $"{desde.ToString(FormatoFechaGasto, formatos)} - {hasta.ToString(FormatoFechaGasto, formatos)}",
                 Monto = monto,
-                FechaPago = fechaPago,
+                FechaPago = fechaPago!.Trim(),
                 ObraId = obraId,
-                Estado = "Registrado"
+                Estado = "Registrado",
+                PartidaNombre = manoDeObra.Nombre,
+                ConstanciaUrl = Path.GetFileName(archivo.FileName),
+                Archivo = guardado
             };
-
-            // Guardar la constancia física si existe
-            if (archivo != null && archivo.Length > 0)
-            {
-                var folderPath = Path.Combine(Directory.GetCurrentDirectory(), "Uploads");
-                if (!Directory.Exists(folderPath)) Directory.CreateDirectory(folderPath);
-                var filePath = Path.Combine(folderPath, archivo.FileName);
-                using (var stream = new FileStream(filePath, FileMode.Create))
-                {
-                    await archivo.CopyToAsync(stream);
-                }
-                pago.ConstanciaUrl = archivo.FileName;
-            }
-
             _context.Pagos.Add(pago);
             await _context.SaveChangesAsync();
-            return Ok(pago);
+            return Ok(ProyectarPago(pago));
         }
 
         // GET: api/obras/pagos/{id}/descargar
@@ -906,10 +990,28 @@ namespace MymContratistas.Api.Controllers
         {
             var pago = await _context.Pagos.FindAsync(id);
             if (pago == null || string.IsNullOrEmpty(pago.ConstanciaUrl)) return NotFound();
-            var filePath = Path.Combine(Directory.GetCurrentDirectory(), "Uploads", pago.ConstanciaUrl);
-            if (!System.IO.File.Exists(filePath)) return NotFound();
-            var bytes = await System.IO.File.ReadAllBytesAsync(filePath);
-            return File(bytes, "application/octet-stream", pago.ConstanciaUrl);
+            var ruta = RutaConstancia(pago);
+            if (!System.IO.File.Exists(ruta)) return NotFound();
+            return PhysicalFile(ruta, TipoContenido(pago.ConstanciaUrl), pago.ConstanciaUrl);
+        }
+
+        // PUT: api/obras/pagos/{id}/anular  (el pago se conserva como Anulado y deja de contar en la partida)
+        [HttpPut("pagos/{id}/anular")]
+        public async Task<IActionResult> AnularPago(int id, [FromBody] AnulacionDto? dto)
+        {
+            var pago = await _context.Pagos.FindAsync(id);
+            if (pago == null) return NotFound("El pago no existe.");
+            if (pago.Estado == "Anulado") return BadRequest("El pago ya está anulado.");
+
+            var motivo = dto?.Motivo?.Trim() ?? string.Empty;
+            if (motivo.Length == 0) return BadRequest("Indique el motivo de la anulación.");
+            if (motivo.Length > 300) return BadRequest("El motivo no puede superar los 300 caracteres.");
+
+            pago.Estado = "Anulado";
+            pago.MotivoAnulacion = motivo;
+            pago.FechaAnulacion = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+            return Ok(ProyectarPago(pago));
         }
     }
-}
+}

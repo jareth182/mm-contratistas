@@ -935,66 +935,75 @@ TC.gastos = async () => {
 TC.pagos = async () => {
   let filas = '';
   let opcionesColaboradores = '';
+  let saldoTexto = '';
 
   try {
-    const respuesta = await apiFetch(API + '/api/obras');
-    const obras = await respuesta.json();
-    const obraActual = obras.find(o => o.id === ST.obraId) || null;
-    
-    const pagosReales = obraActual && obraActual.pagos ? obraActual.pagos : [];
-    const cuadrillaReal = obraActual && obraActual.cuadrilla ? obraActual.cuadrilla : [];
+    const respuesta = await apiFetch(`${API}/api/obras/${ST.obraId}/pagos`);
+    if (!respuesta.ok) throw new Error();
+    const datos = await respuesta.json();
+    const pagos = datos.pagos || [];
+    const colaboradores = datos.colaboradores || [];
 
-    const pagosInvertidos = [...pagosReales].reverse();
-
-    if (pagosInvertidos.length === 0) {
+    if (pagos.length === 0) {
       filas = `<tr><td colspan="6" style="text-align:center;color:var(--concrete)">No hay pagos registrados.</td></tr>`;
     } else {
-      filas = pagosInvertidos.map(p => `<tr>
-        <td><b>${p.colaboradorNombre}</b></td>
-        <td>${p.periodo}</td>
+      filas = pagos.map(p => `<tr style="${p.estado === 'Anulado' ? 'color:var(--concrete)' : ''}">
+        <td><b>${esc(p.colaboradorNombre)}</b></td>
+        <td>${esc(p.periodo)}</td>
         <td class="num">${S(p.monto)}</td>
-        <td>${p.fechaPago}</td>
-        <td><span class="tg ok">Registrado</span></td>
-        <td style="width:130px">
-          ${p.constanciaUrl ? `<button class="btn link sm" onclick="descargarConstancia(${p.id})">constancia</button>` : '<span class="hint">Sin archivo</span>'}
+        <td>${esc(p.fechaPago)}</td>
+        <td>${p.estado === 'Anulado'
+          ? `<span class="tg bd">Anulado</span>${p.motivoAnulacion ? `<br><span class="hint">${esc(p.motivoAnulacion)}</span>` : ''}`
+          : '<span class="tg ok">Registrado</span>'}</td>
+        <td style="width:130px; line-height:2;">
+          ${p.constanciaUrl ? `<button class="btn link sm" onclick="descargarConstancia(${p.id})">Constancia</button>` : '<span class="hint">Sin archivo</span>'}
+          ${p.estado !== 'Anulado' ? `<br><button class="btn link sm" style="color:var(--rust)" onclick="anularPago(${p.id})">Anular pago</button>` : ''}
         </td>
       </tr>`).join('');
     }
 
-    if(cuadrillaReal.length === 0) {
-        opcionesColaboradores = '<option value="">Debe asignar personal en Cuadrilla primero</option>';
+    if (colaboradores.length === 0) {
+      opcionesColaboradores = '<option value="">Debe asignar personal en Cuadrilla primero</option>';
     } else {
-        opcionesColaboradores = cuadrillaReal.map(c => `<option value="${c.nombreCompleto}">${c.nombreCompleto} — ${c.especialidad}</option>`).join('');
+      opcionesColaboradores = colaboradores.map(c =>
+        `<option value="${c.id}" data-jornal="${c.jornal}">${esc(c.nombreCompleto)} — ${esc(c.especialidad)} (${S(c.jornal)}/día)</option>`).join('');
     }
+
+    saldoTexto = datos.partida
+      ? `Saldo de la partida «${esc(datos.partida.nombre)}»: <b>${S(datos.partida.saldo)}</b>`
+      : 'Registre la partida «Mano de obra» en Presupuesto para poder pagar al personal.';
   } catch (error) {
     filas = `<tr><td colspan="6" style="text-align:center;color:var(--rust)">Error al cargar los pagos desde el servidor.</td></tr>`;
+    opcionesColaboradores = '<option value="">No se pudo cargar la cuadrilla</option>';
   }
 
-  const hoy = new Date().toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const hoy = new Date();
+  const hoyIso = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
 
-  return `<div class="card"><div class="ch"><span class="hint">Imputados a la partida Mano de obra</span>
+  return `<div class="card"><div class="ch"><span class="hint">Imputados a la partida Mano de obra · ${saldoTexto}</span>
    <button class="btn sm" onclick="document.getElementById('form_pago').scrollIntoView({behavior: 'smooth'})">Nuevo pago</button></div>
    <table><thead><tr><th>Colaborador</th><th>Periodo pagado</th><th class="num">Monto</th><th>Fecha de pago</th><th>Estado</th><th></th></tr></thead><tbody>
    ${filas}
    </tbody></table></div>
-   <p class="hint">Solo aparecen los colaboradores asignados a la cuadrilla de esta obra.</p>
+   <p class="hint">Solo aparecen los colaboradores activos en la cuadrilla de esta obra. Los pagos anulados no cuentan en la partida.</p>
 
    <div id="form_pago" class="card" style="margin-top:20px"><div class="ch"><h4>Registrar nuevo pago</h4>${ST.hu?'<span class="hu">HU18</span>':''}</div><div class="cb">
+    <div class="f"><label>Colaborador</label><select id="pago_colaborador" onchange="sugerirMontoPago()">${opcionesColaboradores}</select>
+     <span id="pago_jornal" class="hint"></span></div>
     <div class="g2">
-     <div class="f"><label>Colaborador</label><select id="pago_colaborador">${opcionesColaboradores}</select></div>
-     <div class="f"><label>Periodo (Ej. 11/08 - 16/08)</label><input id="pago_periodo" placeholder="DD/MM - DD/MM" oninput="formatearPeriodo(this)"></div>
+     <div class="f"><label>Periodo desde</label><input id="pago_desde" type="date" onchange="sugerirMontoPago()"></div>
+     <div class="f"><label>Periodo hasta</label><input id="pago_hasta" type="date" onchange="sugerirMontoPago()"></div>
     </div>
     <div class="g2">
-     <div class="f"><label>Monto a pagar (S/)</label><input id="pago_monto" type="number" placeholder="1080.00"></div>
-     <div class="f"><label>Fecha de pago</label><input id="pago_fecha" value="${hoy}"></div>
+     <div class="f"><label>Monto a pagar (S/)</label><input id="pago_monto" type="number" min="0.01" step="0.01" placeholder="1080.00" oninput="this.dataset.manual='1'"></div>
+     <div class="f"><label>Fecha de pago</label><input id="pago_fecha" type="date" value="${hoyIso}"></div>
     </div>
-    <div class="f"><label>Constancia de transferencia / Recibo</label><div class="thumbs">
-     <input type="file" id="pago_archivo" style="display:none" accept="image/*,.pdf" onchange="document.getElementById('nombre_constancia').innerText = this.files[0] ? this.files[0].name : ''">
+    <div class="f"><label>Constancia de transferencia / Recibo (obligatorio)</label><div class="thumbs">
+     <input type="file" id="pago_archivo" style="display:none" accept=".pdf,.jpg,.jpeg,.png" onchange="document.getElementById('nombre_constancia').innerText = this.files[0] ? this.files[0].name : ''">
      <button class="btn ghost sm" onclick="document.getElementById('pago_archivo').click()">Adjuntar constancia</button>
      <span id="nombre_constancia" class="hint" style="margin-left:10px;"></span>
     </div></div>
-    <button class="btn" onclick="registrarPago(1, true)">Registrar pago</button>
-    <button class="btn ghost" onclick="registrarPago(1, false)">Registrar sin constancia</button>
+    <button class="btn" onclick="registrarPago(ST.obraId)">Registrar pago</button>
    </div></div>`;
 };
 
@@ -1007,7 +1016,7 @@ TC.econ = async () => {
     const obras = await respuesta.json();
     const obraActual = obras.find(o => o.id === ST.obraId) || null;
     const partidasReales = obraActual && obraActual.partidas ? obraActual.partidas : [];
-    const gastosReales = obraActual && obraActual.gastos ? obraActual.gastos : [];
+    const gastosReales = [...(obraActual && obraActual.gastos ? obraActual.gastos : []), ...(obraActual && obraActual.pagos ? obraActual.pagos : [])];
 
     tp = partidasReales.reduce((sum, p) => sum + p.montoAsignado, 0);
     
@@ -1032,7 +1041,7 @@ TC.econ = async () => {
   <div><div class="v">${S(tg)}</div><div class="l">Gasto acumulado</div></div>
   <div><div class="v" style="color:var(--verde)">${S(tp-tg)}</div><div class="l">Saldo disponible</div></div>
   <div><div class="v">${tp > 0 ? Math.round(tg/tp*100) : 0}%</div><div class="l">Ejecutado</div></div></div>
- <div class="card"><div class="ch"><span class="hint">Los gastos anulados no se consideran</span>
+ <div class="card"><div class="ch"><span class="hint">Los gastos y pagos anulados no se consideran</span>
   <button class="btn ghost sm" onclick="exportarControlEconomico()">Exportar a Excel</button></div>
  <table><thead><tr><th>Partida</th><th class="num">Presupuestado</th><th class="num">Gastado</th><th class="num">Saldo</th><th style="width:160px">Ejecutado</th></tr></thead><tbody>
  ${filas}

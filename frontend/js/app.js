@@ -753,43 +753,66 @@ async function anularGasto(gastoId) {
 
 // --- PAGOS A PERSONAL ---
 
-async function registrarPago(obraId, requiereConstancia) {
+function fechaPagoTexto(iso) {
+  const [anio, mes, dia] = iso.split('-');
+  return `${dia}/${mes}/${anio}`;
+}
+
+// Sugiere el monto (jornal diario x días del periodo) mientras el usuario no lo haya escrito a mano
+function sugerirMontoPago() {
+  const opcion = document.getElementById('pago_colaborador').selectedOptions[0];
+  const jornal = opcion ? parseFloat(opcion.dataset.jornal) : NaN;
+  const info = document.getElementById('pago_jornal');
+  info.innerText = isNaN(jornal) ? '' : `Jornal diario: ${S(jornal)}`;
+
+  const desde = document.getElementById('pago_desde').value;
+  const hasta = document.getElementById('pago_hasta').value;
+  const monto = document.getElementById('pago_monto');
+  if (isNaN(jornal) || !desde || !hasta || monto.dataset.manual === '1') return;
+  const dias = Math.round((new Date(hasta) - new Date(desde)) / 86400000) + 1;
+  if (dias > 0) monto.value = (jornal * dias).toFixed(2);
+}
+
+async function registrarPago(obraId) {
   const colaborador = document.getElementById('pago_colaborador').value;
-  const periodo = document.getElementById('pago_periodo').value;
-  const montoStr = document.getElementById('pago_monto').value;
+  const desde = document.getElementById('pago_desde').value;
+  const hasta = document.getElementById('pago_hasta').value;
   const fecha = document.getElementById('pago_fecha').value;
   const archivoInput = document.getElementById('pago_archivo');
 
   if (!colaborador) {
-     say('bad', 'Debe registrar al menos un trabajador en Cuadrilla antes de pagar.');
-     return;
-  }
-
-  if (!periodo || !montoStr) {
-    say('bad', 'El periodo y el monto son obligatorios.');
+    say('bad', 'Debe asignar al menos un colaborador en Cuadrilla antes de pagar.');
     return;
   }
-  
-  if (requiereConstancia && archivoInput.files.length === 0) {
-    say('bad', 'Debe adjuntar la constancia para registrar el pago.');
+  if (!desde || !hasta) {
+    say('bad', 'Ingrese el periodo pagado.');
     return;
   }
-
-  const monto = parseFloat(montoStr);
+  if (hasta < desde) {
+    say('bad', 'El fin del periodo no puede ser anterior al inicio.');
+    return;
+  }
+  if (!fecha) {
+    say('bad', 'Ingrese la fecha de pago.');
+    return;
+  }
+  const monto = parseFloat(document.getElementById('pago_monto').value);
   if (isNaN(monto) || monto <= 0) {
     say('bad', 'Monto inválido. Debe ser mayor a 0.');
     return;
   }
+  if (archivoInput.files.length === 0) {
+    say('bad', 'Debe adjuntar la constancia (imagen o PDF) para registrar el pago.');
+    return;
+  }
 
   const formData = new FormData();
-  formData.append("colaboradorNombre", colaborador);
-  formData.append("periodo", periodo);
+  formData.append("colaboradorId", colaborador);
+  formData.append("periodoDesde", fechaPagoTexto(desde));
+  formData.append("periodoHasta", fechaPagoTexto(hasta));
   formData.append("monto", monto);
-  formData.append("fechaPago", fecha);
-  
-  if (archivoInput.files.length > 0) {
-    formData.append("archivo", archivoInput.files[0]);
-  }
+  formData.append("fechaPago", fechaPagoTexto(fecha));
+  formData.append("archivo", archivoInput.files[0]);
 
   try {
     const respuesta = await apiFetch(`${API}/api/obras/${obraId}/pagos`, {
@@ -799,9 +822,9 @@ async function registrarPago(obraId, requiereConstancia) {
 
     if (respuesta.ok) {
       say('ok', 'Pago registrado correctamente.');
-      draw(); 
+      draw();
     } else {
-      say('bad', 'Ocurrió un error al registrar el pago.');
+      say('bad', esc((await respuesta.text()) || 'Ocurrió un error al registrar el pago.'));
     }
   } catch (error) {
     say('bad', 'Error de conexión con el servidor.');
@@ -812,17 +835,30 @@ function descargarConstancia(pagoId) {
   descargarArchivo(`${API}/api/obras/pagos/${pagoId}/descargar`);
 }
 
-function formatearPeriodo(input) {
-  let v = input.value.replace(/\D/g, ''); 
-  if (v.length > 8) v = v.substring(0, 8); 
-  
-  let out = '';
-  if (v.length > 0) out += v.substring(0, 2);
-  if (v.length > 2) out += '/' + v.substring(2, 4);
-  if (v.length > 4) out += ' - ' + v.substring(4, 6);
-  if (v.length > 6) out += '/' + v.substring(6, 8);
-  
-  input.value = out;
+async function anularPago(pagoId) {
+  const motivo = prompt('Indique el motivo de la anulación. El pago dejará de contar en los totales de la partida.');
+  if (motivo === null) return;
+  if (!motivo.trim()) {
+    say('bad', 'Indique el motivo de la anulación.');
+    return;
+  }
+
+  try {
+    const respuesta = await apiFetch(`${API}/api/obras/pagos/${pagoId}/anular`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ motivo: motivo.trim() })
+    });
+
+    if (respuesta.ok) {
+      say('ok', 'Pago anulado correctamente.');
+      draw();
+    } else {
+      say('bad', esc((await respuesta.text()) || 'Ocurrió un error al anular el pago.'));
+    }
+  } catch (error) {
+    say('bad', 'Error de conexión con el servidor.');
+  }
 }
 
 // --- CONTROL ECONÓMICO (EXPORTAR CON FORMATO EXCEL) ---
