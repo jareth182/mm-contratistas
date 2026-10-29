@@ -16,11 +16,27 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "9.0.x"
-      - name: Fail on vulnerable packages
+      - name: Scan packages
         working-directory: backend/MymContratistas.Api
         run: |
           dotnet list package --vulnerable --include-transitive | tee report.txt
-          if grep -q "has the following vulnerable packages" report.txt; then exit 1; fi
+          if grep -q "has the following vulnerable packages" report.txt; then
+            STATUS="❌ Vulnerable packages found"; RESULT=1
+          else
+            STATUS="✅ No vulnerable packages"; RESULT=0
+          fi
+          {
+            echo "## Dependency scan (NuGet)"
+            echo "| Check | Result |"
+            echo "|---|---|"
+            echo "| Direct and transitive packages | $STATUS |"
+            echo "| Database | GitHub Advisory Database |"
+            echo
+            echo '```'
+            cat report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $RESULT
 
   sast:
     name: Semgrep
@@ -30,4 +46,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Semgrep scan
-        run: semgrep scan --config p/csharp --config p/javascript --config p/secrets --exclude bin --exclude obj --exclude Migrations --error --metrics=off
+        run: |
+          semgrep scan --config p/csharp --config p/javascript --config p/secrets \
+            --exclude bin --exclude obj --exclude Migrations \
+            --metrics=off --json -o semgrep.json || true
+          python3 - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          d = json.load(open("semgrep.json"))
+          r = d["results"]
+          paths = d.get("paths", {}).get("scanned", [])
+          print("## Code scan (Semgrep)")
+          print("| Metric | Value |")
+          print("|---|---|")
+          print(f"| Files scanned | {len(paths)} |")
+          print("| Rulesets | csharp, javascript, secrets |")
+          print(f"| Findings | {len(r)} |")
+          print(f"| Result | {'✅ Clean' if not r else '❌ Findings'} |")
+          if r:
+              print("\n| Severity | Rule | Location |\n|---|---|---|")
+              for f in r:
+                  print(f"| {f['extra']['severity']} | {f['check_id'].split('.')[-1]} | {f['path']}:{f['start']['line']} |")
+          EOF
+          test "$(python3 -c 'import json;print(len(json.load(open("semgrep.json"))["results"]))')" = "0"
