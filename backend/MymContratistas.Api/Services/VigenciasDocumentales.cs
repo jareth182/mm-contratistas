@@ -17,6 +17,25 @@ namespace MymContratistas.Api.Services
                     .ToDictionary(t => t.Key, t => t.OrderByDescending(v => v.FechaVencimiento).ThenByDescending(v => v.Id).First()));
         }
 
+        public const string SinRegistrar = "Sin registrar";
+
+        // Estado de un documento del colaborador según su última vigencia: Vigente, Por vencer, Vencido o Sin registrar
+        public static object Resumen(IReadOnlyDictionary<string, VigenciaDocumento>? ultimas, string tipo, DateOnly hoy) =>
+            ultimas != null && ultimas.TryGetValue(tipo, out var v)
+                ? new { estado = VigenciaDocumento.EstadoAl(v.FechaVencimiento, hoy), vencimiento = (DateOnly?)v.FechaVencimiento, diasRestantes = (int?)(v.FechaVencimiento.DayNumber - hoy.DayNumber) }
+                : new { estado = SinRegistrar, vencimiento = (DateOnly?)null, diasRestantes = (int?)null };
+
+        // Estado documental del colaborador: el más desfavorable de sus documentos (Vencido, Sin registrar, Por vencer o Vigente)
+        public static string EstadoGeneral(IReadOnlyDictionary<string, VigenciaDocumento>? ultimas, DateOnly hoy)
+        {
+            var estados = VigenciaDocumento.Tipos
+                .Select(t => ultimas != null && ultimas.TryGetValue(t, out var v) ? VigenciaDocumento.EstadoAl(v.FechaVencimiento, hoy) : SinRegistrar)
+                .ToList();
+            foreach (var peor in new[] { "Vencido", SinRegistrar, "Por vencer" })
+                if (estados.Contains(peor)) return peor;
+            return "Vigente";
+        }
+
         // Mensaje que impide asignar al colaborador, o null si tiene SCTR y examen médico vigentes
         public static string? Impedimento(string nombre, IReadOnlyDictionary<string, VigenciaDocumento>? ultimas, DateOnly hoy)
         {

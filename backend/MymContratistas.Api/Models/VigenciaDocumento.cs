@@ -18,6 +18,12 @@ namespace MymContratistas.Api.Models
         public DateOnly FechaVencimiento { get; set; }
         public DateTime FechaRegistro { get; set; }
 
+        // Documento que respalda la vigencia (PDF, JPG o PNG). «Archivo» es el nombre con el que se guardó en
+        // Uploads/vigencias; las vigencias registradas antes de HU23 no tienen archivo.
+        [JsonIgnore]
+        public string Archivo { get; set; } = string.Empty;
+        public string ArchivoNombre { get; set; } = string.Empty;
+
         public int TrabajadorId { get; set; }
         [JsonIgnore]
         public Trabajador? Trabajador { get; set; }

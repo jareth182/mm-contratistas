@@ -1619,6 +1619,62 @@ async function enviarCotizacion() {
 
 // --- PERSONAL (HU-10) ---
 
+// Documentación del colaborador (HU23)
+function abrirDocumentacion(id) {
+  ST.docTrabajadorId = id;
+  ST.formVigencia = null;
+  go('docpers');
+}
+function nuevaVigencia(tipo) {
+  ST.formVigencia = tipo;
+  ST.msg = null;
+  draw().then(() => { const f = document.getElementById('form_vigencia'); if (f) f.scrollIntoView({ block: 'center' }); });
+}
+function cancelarVigencia() {
+  ST.formVigencia = null;
+  draw();
+}
+async function guardarVigencia(tipo) {
+  const error = document.getElementById('vig_error');
+  const mostrar = texto => { error.innerHTML = `<div class="msg bad">${esc(texto)}</div>`; };
+  const inicio = document.getElementById('vig_inicio').value;
+  const vencimiento = document.getElementById('vig_venc').value;
+  const archivo = document.getElementById('vig_archivo').files[0];
+
+  if (!inicio || !vencimiento) return mostrar('Ingrese las fechas de inicio y de vencimiento.');
+  if (vencimiento <= inicio) return mostrar('El vencimiento debe ser posterior al inicio de la vigencia.');
+  if (!archivo) return mostrar('Adjunte el documento (PDF, JPG o PNG).');
+  if (!/\.(pdf|jpe?g|png)$/i.test(archivo.name)) return mostrar('Solo se permiten archivos PDF, JPG o PNG.');
+  if (archivo.size > 10 * 1024 * 1024) return mostrar('El archivo supera el tamaño máximo de 10 MB.');
+
+  const formulario = new FormData();
+  formulario.append('tipo', tipo);
+  formulario.append('fechaInicio', inicio);
+  formulario.append('fechaVencimiento', vencimiento);
+  formulario.append('archivo', archivo);
+
+  const boton = document.getElementById('vig_guardar');
+  boton.disabled = true;
+  error.innerHTML = '';
+  try {
+    const r = await apiFetch(`${API}/api/personal/${ST.docTrabajadorId}/vigencias`, { method: 'POST', body: formulario });
+    if (r.status === 201) {
+      const datos = await r.json();
+      ST.formVigencia = null;
+      return say('ok', esc(datos.mensaje));
+    }
+    let texto = 'No se pudo registrar la vigencia. Intente nuevamente.';
+    if (r.status === 400 || r.status === 404) {
+      try { texto = (await r.json()).mensaje || texto; } catch (e) { /* mensaje genérico */ }
+    }
+    mostrar(texto);
+  } catch (e) {
+    mostrar('Error de conexión con el servidor.');
+  }
+  boton.disabled = false;
+}
+
+
 function filtrarPersonal() {
   const texto = document.getElementById('buscar_personal').value.trim().toLowerCase();
   const lista = (ST.personalCache || []).filter(t =>
