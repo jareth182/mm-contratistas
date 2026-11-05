@@ -404,13 +404,14 @@ namespace MymContratistas.Api.Controllers
             await _context.SaveChangesAsync();
 
             // Se avisa a quien hizo el comentario; si su cuenta ya no existe, al correo de la ficha del cliente
-            var correo = await _context.Usuarios.Where(u => u.Id == comentario.AutorUsuarioId).Select(u => u.Correo).FirstOrDefaultAsync();
+            var cuenta = await _context.Usuarios.Where(u => u.Id == comentario.AutorUsuarioId).Select(u => new { u.Id, u.Correo }).FirstOrDefaultAsync();
+            var correo = cuenta?.Correo;
             if (string.IsNullOrWhiteSpace(correo)) correo = comentario.Hito!.Obra!.ClienteRegistro?.Correo;
 
             var mensaje = "Respuesta enviada. El cliente ya puede verla en su panel.";
             if (string.IsNullOrWhiteSpace(correo))
                 mensaje += " El cliente no tiene correo registrado, por lo que no se le notificó.";
-            else if (await _notificacion.RespuestaAlClienteAsync(comentario.Hito!.Obra!, comentario.Hito, respuesta, correo))
+            else if (await _notificacion.RespuestaAlClienteAsync(comentario.Hito!.Obra!, comentario.Hito, respuesta, new DestinatarioNotificacion(cuenta?.Id, correo)))
                 mensaje += " Se notificó al cliente por correo.";
             else
                 mensaje += " No se pudo enviar el correo de aviso al cliente.";

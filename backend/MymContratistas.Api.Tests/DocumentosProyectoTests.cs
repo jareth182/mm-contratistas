@@ -29,7 +29,7 @@ namespace MymContratistas.Api.Tests
         public DocumentosProyectoTests()
         {
             var invitacion = new InvitacionService(new SinCorreo(), new ConfigurationBuilder().Build(), NullLogger<InvitacionService>.Instance);
-            _obras = new ObrasController(Db, new PasswordHasher<Usuario>(), invitacion, new NotificacionHitoService(new SinCorreo(), NullLogger<NotificacionHitoService>.Instance));
+            _obras = new ObrasController(Db, new PasswordHasher<Usuario>(), invitacion, Notificaciones.Con(Db, new SinCorreo()));
 
             var cliente = new Cliente { Nombre = "Inversiones Del Río", Documento = "20512345678", TipoDocumento = "RUC", Correo = "contacto@delrio.pe" };
             Db.Clientes.Add(cliente);
@@ -61,7 +61,7 @@ namespace MymContratistas.Api.Tests
 
         private string CarpetaDocumentos => Path.Combine(Carpeta, "Uploads", "documentos");
 
-        private ClienteController PanelDelCliente(int? usuarioId = null) => new(Db, Notificaciones.Silenciosa())
+        private ClienteController PanelDelCliente(int? usuarioId = null) => new(Db, Notificaciones.Silenciosa(Db))
         {
             ControllerContext = new ControllerContext
             {

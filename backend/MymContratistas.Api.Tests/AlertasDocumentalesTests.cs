@@ -39,7 +39,7 @@ namespace MymContratistas.Api.Tests
         }
 
         private AlertasDocumentalesService Servicio(CorreoDePrueba correo) =>
-            new(Db, Notificaciones.Con(correo), NullLogger<AlertasDocumentalesService>.Instance);
+            new(Db, Notificaciones.Con(Db, correo), NullLogger<AlertasDocumentalesService>.Instance);
 
         private int Colaborador(string nombres, string documento, bool activo = true)
         {
@@ -378,6 +378,7 @@ namespace MymContratistas.Api.Tests
         private ServiceProvider Proveedor() => new ServiceCollection()
             .AddSingleton<IEmailService>(_correo)
             .AddScoped(_ => OtroContexto())
+            .AddScoped<NotificacionService>()
             .AddScoped<NotificacionHitoService>()
             .AddScoped<AlertasDocumentalesService>()
             .AddLogging()

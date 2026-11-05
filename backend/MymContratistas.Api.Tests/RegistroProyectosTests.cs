@@ -48,7 +48,7 @@ namespace MymContratistas.Api.Tests
             var invitacion = new InvitacionService(_correo, config, NullLogger<InvitacionService>.Instance);
 
             _clientes = new ClientesController(_db);
-            _obras = new ObrasController(_db, new PasswordHasher<Usuario>(), invitacion, new NotificacionHitoService(_correo, NullLogger<NotificacionHitoService>.Instance));
+            _obras = new ObrasController(_db, new PasswordHasher<Usuario>(), invitacion, Notificaciones.Con(_db, _correo));
         }
 
         public void Dispose()
@@ -335,7 +335,7 @@ namespace MymContratistas.Api.Tests
                 new Claim(ClaimTypes.Name, usuario.NombreCompleto),
                 new Claim(ClaimTypes.Role, NombresRol.Cliente)
             }, "Prueba");
-            return new ClienteController(_db, Notificaciones.Silenciosa())
+            return new ClienteController(_db, Notificaciones.Silenciosa(_db))
             {
                 ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identidad) } }
             };

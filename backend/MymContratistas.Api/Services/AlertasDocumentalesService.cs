@@ -44,17 +44,17 @@ namespace MymContratistas.Api.Services
                 return new(ResultadoEnvioAlertas.SinAlertas, 0, 0);
             }
 
-            var correos = await _context.Usuarios
+            var gerentes = await _context.Usuarios
                 .Where(u => u.Rol.Nombre == NombresRol.Gerente && u.Estado == "Activo" && u.Correo != "")
-                .Select(u => u.Correo).ToListAsync();
-            if (correos.Count == 0)
+                .Select(u => new DestinatarioNotificacion(u.Id, u.Correo)).ToListAsync();
+            if (gerentes.Count == 0)
             {
                 _logger.LogWarning("Hay {Alertas} alerta(s) de documentación del personal pero no hay un Gerente de Operaciones activo a quien avisar", alertas.Count);
                 await RegistrarAsync(hoy, alertas.Count, 0);
                 return new(ResultadoEnvioAlertas.SinDestinatarios, alertas.Count, 0);
             }
 
-            var enviados = await _notificacion.AlertasDocumentalesAsync(correos, alertas, hoy);
+            var enviados = await _notificacion.AlertasDocumentalesAsync(gerentes, alertas, hoy);
             if (enviados == 0) return new(ResultadoEnvioAlertas.Fallido, alertas.Count, 0);
 
             await RegistrarAsync(hoy, alertas.Count, enviados);

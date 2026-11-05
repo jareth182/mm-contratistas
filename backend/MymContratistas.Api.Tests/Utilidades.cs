@@ -64,9 +64,11 @@ namespace MymContratistas.Api.Tests
 
     public static class Notificaciones
     {
-        public static NotificacionHitoService Con(IEmailService correo) =>
-            new(correo, NullLogger<NotificacionHitoService>.Instance);
-        public static NotificacionHitoService Silenciosa() => Con(new CorreoDePrueba());
+        public static NotificacionService Nucleo(ApplicationDbContext db, IEmailService correo) =>
+            new(db, correo, NullLogger<NotificacionService>.Instance);
+        public static NotificacionHitoService Con(ApplicationDbContext db, IEmailService correo) =>
+            new(Nucleo(db, correo), db, NullLogger<NotificacionHitoService>.Instance);
+        public static NotificacionHitoService Silenciosa(ApplicationDbContext db) => Con(db, new CorreoDePrueba());
     }
 
     public static class Respuesta

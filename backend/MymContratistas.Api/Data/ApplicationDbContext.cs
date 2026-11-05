@@ -26,6 +26,7 @@ namespace MymContratistas.Api.Data // <-- Aquí estaba el detalle
         public DbSet<Trabajador> Personal { get; set; }
         public DbSet<VigenciaDocumento> Vigencias { get; set; }
         public DbSet<EnvioAlertaDocumental> EnviosAlertaDocumental { get; set; }
+        public DbSet<Notificacion> Notificaciones { get; set; }
         public DbSet<SolicitudCotizacion> SolicitudesCotizacion { get; set; }
         public DbSet<AdjuntoCotizacion> AdjuntosCotizacion { get; set; }
 
@@ -50,6 +51,10 @@ namespace MymContratistas.Api.Data // <-- Aquí estaba el detalle
                 .HasOne(c => c.ComentarioPadre).WithMany().HasForeignKey(c => c.ComentarioPadreId).OnDelete(DeleteBehavior.NoAction);
             modelBuilder.Entity<ComentarioHito>().HasIndex(c => c.HitoId);
             modelBuilder.Entity<EnvioAlertaDocumental>().HasIndex(e => e.Fecha).IsUnique();
+            // Control de duplicados (único por evento y destinatario) y consultas de la campana de cada usuario
+            modelBuilder.Entity<Notificacion>().HasIndex(n => n.ClaveDeduplicacion).IsUnique();
+            modelBuilder.Entity<Notificacion>().HasIndex(n => new { n.UsuarioId, n.Canal, n.Leida, n.Fecha });
+            modelBuilder.Entity<Notificacion>().HasIndex(n => new { n.Estado, n.Fecha });
             modelBuilder.Entity<Cliente>().HasIndex(c => c.Documento).IsUnique();
             modelBuilder.Entity<Trabajador>().ToTable("Personal").HasIndex(t => t.Documento).IsUnique();
             modelBuilder.Entity<VigenciaDocumento>().HasIndex(v => new { v.TrabajadorId, v.Tipo });

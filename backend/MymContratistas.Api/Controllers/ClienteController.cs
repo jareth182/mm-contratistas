@@ -144,10 +144,10 @@ namespace MymContratistas.Api.Controllers
             await _context.SaveChangesAsync();
 
             // Gerente de Operaciones activo: el aviso nunca impide que el comentario quede registrado
-            var correos = await _context.Usuarios
-                .Where(u => u.Rol.Nombre == NombresRol.Gerente && u.Estado == "Activo" && u.Correo != "")
-                .Select(u => u.Correo).ToListAsync();
-            var avisado = await _notificacion.ComentarioDelClienteAsync(hito.Obra!, hito, comentario, correos);
+            var gerentes = await _context.Usuarios
+                .Where(u => u.Rol.Nombre == NombresRol.Gerente && u.Estado == "Activo")
+                .Select(u => new DestinatarioNotificacion(u.Id, u.Correo)).ToListAsync();
+            var avisado = await _notificacion.ComentarioDelClienteAsync(hito.Obra!, hito, comentario, gerentes);
 
             return Ok(new
             {

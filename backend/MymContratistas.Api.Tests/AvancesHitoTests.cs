@@ -38,7 +38,7 @@ namespace MymContratistas.Api.Tests
         public AvancesHitoTests()
         {
             var invitacion = new InvitacionService(_correo, new ConfigurationBuilder().Build(), NullLogger<InvitacionService>.Instance);
-            _obras = new ObrasController(Db, new PasswordHasher<Usuario>(), invitacion, new NotificacionHitoService(_correo, NullLogger<NotificacionHitoService>.Instance))
+            _obras = new ObrasController(Db, new PasswordHasher<Usuario>(), invitacion, Notificaciones.Con(Db, _correo))
             {
                 ControllerContext = new ControllerContext
                 {

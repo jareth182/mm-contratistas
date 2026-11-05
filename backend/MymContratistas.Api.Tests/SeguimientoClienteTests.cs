@@ -60,7 +60,7 @@ namespace MymContratistas.Api.Tests
             _docAjenoId = doc.Id;
         }
 
-        private ClienteController Panel(int? usuarioId = null, string nombre = "Inversiones Del Río") => new(Db, Notificaciones.Silenciosa())
+        private ClienteController Panel(int? usuarioId = null, string nombre = "Inversiones Del Río") => new(Db, Notificaciones.Silenciosa(Db))
         {
             ControllerContext = new ControllerContext
             {

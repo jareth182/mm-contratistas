@@ -27,7 +27,7 @@ namespace MymContratistas.Api.Tests
         public GastosProyectoTests()
         {
             var invitacion = new InvitacionService(new SinCorreo(), new ConfigurationBuilder().Build(), NullLogger<InvitacionService>.Instance);
-            _obras = new ObrasController(Db, new PasswordHasher<Usuario>(), invitacion, new NotificacionHitoService(new SinCorreo(), NullLogger<NotificacionHitoService>.Instance));
+            _obras = new ObrasController(Db, new PasswordHasher<Usuario>(), invitacion, Notificaciones.Con(Db, new SinCorreo()));
             var obra = new Obra { Nombre = "Los Cedros", Cliente = "Del Río" };
             Db.Obras.Add(obra);
             Db.Partidas.Add(new Partida { Obra = obra, Nombre = "Concreto", MontoAsignado = 1000 });

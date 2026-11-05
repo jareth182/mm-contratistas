@@ -84,9 +84,50 @@ async function cargarAlertasDocumentales() {
   }
 }
 
+// Avisos de la aplicación del usuario (HT-05): los últimos 5 y cuántos no ha leído
+async function cargarAvisos() {
+  if (!ST.usuario) { ST.avisos = null; return; }
+  try {
+    const r = await apiFetch(`${API}/api/notificaciones?tamano=5`);
+    ST.avisos = r.ok ? await r.json() : null;
+  } catch (e) {
+    ST.avisos = null;
+  }
+}
+
+async function marcarAvisosLeidos(e) {
+  if (e) e.stopPropagation();
+  try { await apiFetch(`${API}/api/notificaciones/leidas`, { method: 'PUT' }); } catch (x) { /* se reintenta al volver a abrir */ }
+  draw();
+}
+
+// Abre el aviso: lo marca como leído y lleva al hito o a la pantalla a la que se refiere
+async function abrirAviso(id) {
+  const aviso = ((ST.avisos || {}).items || []).find(x => x.id === id);
+  if (!aviso) return;
+  try { await apiFetch(`${API}/api/notificaciones/${id}/leida`, { method: 'PUT' }); } catch (e) { /* no impide navegar */ }
+
+  if (ST.usuario.rol === 'Cliente') {
+    if (!aviso.obraId) return draw();
+    ST.obraCliId = aviso.obraId;
+    ST.hitoCliId = aviso.hitoId || null;
+    ST.avisoComentario = null;
+    return go('c-seg');
+  }
+  if (!aviso.obraId) return go(aviso.tipo === 'AlertaDocumental' ? 'alertas' : 'tablero');
+  ST.obraId = aviso.obraId;
+  ST.hitoEditando = aviso.hitoId || null;
+  ST.registrandoAvance = false;
+  ST.formAvance = null;
+  ST.respondiendoA = null;
+  ST.avisoRespuesta = null;
+  ST.tab = 'hitos';
+  go('obra');
+}
+
 async function draw(){
   guardarAcceso();
-  await cargarAlertasDocumentales();
+  await Promise.all([cargarAlertasDocumentales(), cargarAvisos()]);
   const vista = V[ST.v] || V.home;
   document.getElementById('app').innerHTML = await vista();
   location.hash = ST.v === 'obra-pub' && ST.proyectoPubId ? `obra-pub?id=${ST.proyectoPubId}`

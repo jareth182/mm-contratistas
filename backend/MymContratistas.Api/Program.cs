@@ -31,6 +31,7 @@ builder.Services.AddScoped<IPasswordHasher<Usuario>, PasswordHasher<Usuario>>();
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<InvitacionService>();
+builder.Services.AddScoped<NotificacionService>();
 builder.Services.AddScoped<NotificacionHitoService>();
 builder.Services.AddScoped<AlertasDocumentalesService>();
 builder.Services.AddHostedService<EnvioDiarioAlertasDocumentales>();

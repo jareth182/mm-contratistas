@@ -74,12 +74,12 @@ namespace MymContratistas.Api.Tests
         };
 
         private ClienteController Panel(CorreoDePrueba? correo = null) =>
-            new(Db, Notificaciones.Con(correo ?? _correo)) { ControllerContext = ComoUsuario(_clienteUsuarioId, "Inversiones Del Río") };
+            new(Db, Notificaciones.Con(Db, correo ?? _correo)) { ControllerContext = ComoUsuario(_clienteUsuarioId, "Inversiones Del Río") };
 
         private ObrasController Administracion(CorreoDePrueba? correo = null)
         {
             var invitacion = new InvitacionService(_correo, new ConfigurationBuilder().Build(), NullLogger<InvitacionService>.Instance);
-            return new ObrasController(Db, new PasswordHasher<Usuario>(), invitacion, Notificaciones.Con(correo ?? _correo))
+            return new ObrasController(Db, new PasswordHasher<Usuario>(), invitacion, Notificaciones.Con(Db, correo ?? _correo))
             {
                 ControllerContext = ComoUsuario(_supervisorId, "Marco Zapata")
             };

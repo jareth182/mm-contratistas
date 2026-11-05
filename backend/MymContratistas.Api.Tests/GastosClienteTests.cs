@@ -65,7 +65,7 @@ namespace MymContratistas.Api.Tests
             Db.SaveChanges();
         }
 
-        private ClienteController Panel(int? usuarioId = null, string nombre = "Inversiones Del Río") => new(Db, Notificaciones.Silenciosa())
+        private ClienteController Panel(int? usuarioId = null, string nombre = "Inversiones Del Río") => new(Db, Notificaciones.Silenciosa(Db))
         {
             ControllerContext = new ControllerContext
             {
