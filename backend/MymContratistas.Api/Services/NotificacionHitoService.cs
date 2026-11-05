@@ -56,6 +56,46 @@ namespace MymContratistas.Api.Services
             return await EnviarATodosAsync(new[] { correoCliente }, asunto, cuerpo, $"respuesta {respuesta.Id} del hito {hito.Nombre}");
         }
 
+        // HU24: resumen diario de documentación vencida o por vencer para el Gerente de Operaciones.
+        // Devuelve cuántos destinatarios lo recibieron; un fallo con uno no impide el envío a los demás.
+        public async Task<int> AlertasDocumentalesAsync(IReadOnlyCollection<string> destinatarios, IReadOnlyList<AlertaDocumental> alertas, DateOnly hoy)
+        {
+            var vencidos = alertas.Count(a => a.Estado == "Vencido");
+            var porVencer = alertas.Count - vencidos;
+            var asunto = $"Documentación del personal al {hoy:dd/MM/yyyy}: {vencidos} vencido{(vencidos == 1 ? "" : "s")}, {porVencer} por vencer";
+            var filas = string.Concat(alertas.Select(a => $@"<tr>
+                    <td style='padding:6px 10px;border-bottom:1px solid #ddd'>{WebUtility.HtmlEncode(a.Colaborador)}</td>
+                    <td style='padding:6px 10px;border-bottom:1px solid #ddd'>{WebUtility.HtmlEncode(a.Documento)}</td>
+                    <td style='padding:6px 10px;border-bottom:1px solid #ddd'>{a.Vencimiento:dd/MM/yyyy}</td>
+                    <td style='padding:6px 10px;border-bottom:1px solid #ddd;text-align:right'>{a.DiasRestantes}</td>
+                    <td style='padding:6px 10px;border-bottom:1px solid #ddd;color:{(a.Estado == "Vencido" ? "#B3402A" : "#9A6B00")}'><b>{a.Estado}</b></td></tr>"));
+            var cuerpo = $@"
+            <div style='font-family: Arial, sans-serif; padding: 20px; color: #333;'>
+                <h2>Documentación del personal</h2>
+                <p>Estos colaboradores tienen el SCTR o el examen médico ocupacional vencido o por vencer en los próximos {VigenciaDocumento.DiasPorVencer} días:</p>
+                <table style='border-collapse:collapse;font-size:14px'>
+                    <thead><tr style='background:#F5F7F8;text-align:left'><th style='padding:6px 10px'>Colaborador</th><th style='padding:6px 10px'>Documento</th><th style='padding:6px 10px'>Vencimiento</th><th style='padding:6px 10px'>Días restantes</th><th style='padding:6px 10px'>Estado</th></tr></thead>
+                    <tbody>{filas}</tbody>
+                </table>
+                <p>Un colaborador con documentación vencida no puede asignarse a una cuadrilla. Ingrese al panel de administración, en Personal, para registrar las renovaciones.</p>
+            </div>";
+
+            var enviados = 0;
+            foreach (var correo in destinatarios)
+            {
+                try
+                {
+                    await _email.EnviarAsync(correo, asunto, cuerpo);
+                    enviados++;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "No se pudo enviar el aviso de documentación del personal a {Correo}", correo);
+                }
+            }
+            return enviados;
+        }
+
         private async Task<bool> EnviarATodosAsync(IEnumerable<string> destinatarios, string asunto, string cuerpo, string detalle)
         {
             var todosEnviados = true;

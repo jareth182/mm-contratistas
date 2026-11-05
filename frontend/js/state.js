@@ -37,6 +37,3 @@ let ST={v:'home',tab:'hitos',perfil:'pub',hu:false,menu:null,nav:false,msg:null}
 const S=n=>'S/ '+n.toLocaleString('es-PE',{minimumFractionDigits:2,maximumFractionDigits:2});
 const dt=d=>d==='Vigente'?'<span class="tg ok">Vigente</span>':d==='Por vencer'?'<span class="tg wn">Por vencer</span>':'<span class="tg bd">Vencido</span>';
 const cota=(t,hu,g='h2')=>`<div class="cota"><span class="t"></span><span class="b"></span><${g}>${t}</${g}><span class="r"></span>${hu&&ST.hu?`<span class="hu">${hu}</span>`:''}</div>`;
-const ALERTAS=[['Saúl Quinto Palomino','SCTR vencido hace 23 días','bd'],
- ['Julio Ramos Bellido','SCTR vence en 14 días','wn'],
- ['Nilo Achahui Mamani','Examen médico vence en 22 días','wn']];

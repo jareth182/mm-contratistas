@@ -4,9 +4,33 @@ using MymContratistas.Api.Models;
 
 namespace MymContratistas.Api.Services
 {
+    // Documento de un colaborador que vence en 30 días o menos, o que ya venció (HU24)
+    public record AlertaDocumental(int TrabajadorId, string Colaborador, string Documento, DateOnly Vencimiento, int DiasRestantes, string Estado);
+
     // Consulta de la documentación obligatoria del personal; la usan la asignación a cuadrillas y el control documental
     public static class VigenciasDocumentales
     {
+        // Alertas del personal activo según la última vigencia de cada documento, de la más urgente a la menos urgente.
+        // Un documento aún no registrado no es una alerta de vencimiento: ya impide asignar al colaborador (HU14).
+        public static async Task<List<AlertaDocumental>> AlertasAsync(ApplicationDbContext db, DateOnly hoy)
+        {
+            var activos = await db.Personal.Where(t => t.Estado == Trabajador.Activo).ToListAsync();
+            var ultimas = await UltimasAsync(db, activos.Select(t => t.Id).ToList());
+            var alertas = new List<AlertaDocumental>();
+            foreach (var t in activos)
+            {
+                if (!ultimas.TryGetValue(t.Id, out var documentos)) continue;
+                foreach (var tipo in VigenciaDocumento.Tipos)
+                {
+                    if (!documentos.TryGetValue(tipo, out var v)) continue;
+                    var estado = VigenciaDocumento.EstadoAl(v.FechaVencimiento, hoy);
+                    if (estado == "Vigente") continue;
+                    alertas.Add(new AlertaDocumental(t.Id, t.NombreCompleto, tipo, v.FechaVencimiento, v.FechaVencimiento.DayNumber - hoy.DayNumber, estado));
+                }
+            }
+            return alertas.OrderBy(a => a.DiasRestantes).ThenBy(a => a.Colaborador).ThenBy(a => a.Documento).ToList();
+        }
+
         // Para cada colaborador, la última vigencia registrada de cada tipo (la de mayor vencimiento)
         public static async Task<Dictionary<int, Dictionary<string, VigenciaDocumento>>> UltimasAsync(ApplicationDbContext db, IReadOnlyCollection<int> trabajadorIds)
         {

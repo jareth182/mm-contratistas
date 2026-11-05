@@ -43,12 +43,29 @@ function iniciales(nombre){
   return ((p[0]||'')[0]||'').toUpperCase()+((p[1]||'')[0]||'').toUpperCase();
 }
 
-function userMenu(ini,nom,rol,alert){
-  return `${alert?`<span class="ddwrap"><button class="iconbtn" onclick="tog('alr',event)" title="Avisos">🔔<span class="badge">3</span></button>
+// «SCTR vencido hace 23 días», «Examen Médico vence en 14 días»
+function textoAlerta(a){
+  const d=a.diasRestantes;
+  return d<0?`${a.documento} vencido hace ${-d} día${d===-1?'':'s'}`
+    :d===0?`${a.documento} vence hoy`
+    :`${a.documento} vence en ${d} día${d===1?'':'s'}`;
+}
+
+function campanaAlertas(){
+  const r=ST.alertas;
+  const total=r?r.resumen.total:0;
+  const lista=r?r.alertas.slice(0,5):[];
+  return `<span class="ddwrap"><button class="iconbtn" onclick="tog('alr',event)" title="Documentación del personal">🔔${total?`<span class="badge">${total}</span>`:''}</button>
     ${ST.menu==='alr'?`<div class="dd" style="min-width:310px">
-      <div class="dh"><span>Documentación del personal</span><b style="color:var(--rust)">3</b></div>
-      ${ALERTAS.map(a=>`<button class="item" onclick="go('alertas')">${a[0]}<span class="sub"><span class="tg ${a[2]}" style="font-size:11.5px">${a[1]}</span></span></button>`).join('')}
-      <button class="item" onclick="go('alertas')" style="text-align:center;font-family:var(--h)">Ver todas las alertas</button></div>`:''}</span>`:''}
+      <div class="dh"><span>Documentación del personal</span><b style="color:${total?'var(--rust)':'var(--concrete)'}">${total}</b></div>
+      ${lista.map(a=>`<button class="item" onclick="abrirDocumentacion(${a.trabajadorId})">${esc(a.colaborador)}<span class="sub"><span class="tg ${a.estado==='Vencido'?'bd':'wn'}" style="font-size:11.5px">${esc(textoAlerta(a))}</span></span></button>`).join('')
+        ||`<div class="item" style="cursor:default">${r?'Toda la documentación está vigente.':'No se pudieron cargar las alertas.'}</div>`}
+      ${total>lista.length?`<div class="item" style="cursor:default;color:var(--concrete)">y ${total-lista.length} más…</div>`:''}
+      <button class="item" onclick="go('alertas')" style="text-align:center;font-family:var(--h)">Ver todas las alertas</button></div>`:''}</span>`;
+}
+
+function userMenu(ini,nom,rol,alert){
+  return `${alert?campanaAlertas():''}
     <span class="ddwrap"><button class="userbtn" onclick="tog('usr',event)">
       <span class="av">${ini}</span><span class="un"><b>${nom}</b><span>${rol}</span></span><span style="color:#8FA3B2">▾</span></button>
       ${ST.menu==='usr'?`<div class="dd">

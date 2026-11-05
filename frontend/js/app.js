@@ -72,8 +72,21 @@ function guardarAcceso() {
   }
 }
 
+// Alertas de documentación del personal (HU24): se consultan en cada dibujo para que la campana, el tablero y la
+// pantalla de alertas reflejen de inmediato una renovación recién registrada
+async function cargarAlertasDocumentales() {
+  if (!ST.usuario || ST.usuario.rol === 'Cliente') { ST.alertas = null; return; }
+  try {
+    const r = await apiFetch(`${API}/api/personal/alertas`);
+    ST.alertas = r.ok ? await r.json() : null;
+  } catch (e) {
+    ST.alertas = null;
+  }
+}
+
 async function draw(){
   guardarAcceso();
+  await cargarAlertasDocumentales();
   const vista = V[ST.v] || V.home;
   document.getElementById('app').innerHTML = await vista();
   location.hash = ST.v === 'obra-pub' && ST.proyectoPubId ? `obra-pub?id=${ST.proyectoPubId}`

@@ -205,6 +205,20 @@ V.perfil=()=>`${navbar()}${crumbs([['Mi perfil']])}
    <tr><th>Rol</th><td>${ST.usuario.rol}</td></tr></tbody></table></div></div>${pie()}`;
 
 /* ---- admin ---- */
+// Indicador «Documentación del Personal» del tablero (HU24)
+function bannerDocumentacion(){
+  const r=ST.alertas;
+  if(!r) return '<div class="msg warn" style="margin-top:20px"><b>Documentación del personal.</b> No se pudo consultar el estado de la documentación.</div>';
+  const {porVencer,vencidos,total}=r.resumen;
+  if(!total) return '<div class="msg ok" style="margin-top:20px"><b>Documentación del personal.</b> Todo el SCTR y los exámenes médicos están vigentes.</div>';
+  const a=r.alertas[0];
+  const plural=(n,s,p)=>`${n} ${n===1?s:p}`;
+  return `<div class="msg ${vencidos?'bad':'warn'}" style="margin-top:20px"><b>Documentación del personal.</b>
+   ${[vencidos?plural(vencidos,'documento vencido','documentos vencidos'):'',porVencer?plural(porVencer,'por vencer','por vencer'):''].filter(Boolean).join(' · ')}.
+   El más urgente: ${esc(a.colaborador)}, ${esc(textoAlerta(a))}${a.estado==='Vencido'?'; no puede asignarse a una obra':''}.
+   <button class="btn ghost sm" style="margin-left:8px" onclick="go('alertas')">Ver alertas</button></div>`;
+}
+
 V.tablero=()=>`${navbar()}${crumbs([['Tablero']])}
  <div class="page"><div class="phead"><div><h1>Buenos días, ${ST.usuario.nombreCompleto.split(' ')[0]}</h1>
    <p>Jueves 10 de septiembre de 2026 · 3 obras en ejecución</p></div>
@@ -213,12 +227,10 @@ V.tablero=()=>`${navbar()}${crumbs([['Tablero']])}
   <div class="kpi">
    <div><div class="v">3</div><div class="l">Obras en ejecución</div></div>
    <div><div class="v">14</div><div class="l">Colaboradores activos</div></div>
-   <div><div class="v" style="color:var(--ambar)">2</div><div class="l">Documentos por vencer</div></div>
-   <div><div class="v" style="color:var(--rust)">1</div><div class="l">Documentos vencidos</div></div>
+   <div style="cursor:pointer" onclick="go('alertas')" title="Ver alertas de documentación"><div class="v" style="color:var(--ambar)">${ST.alertas?ST.alertas.resumen.porVencer:'—'}</div><div class="l">Documentos por vencer</div></div>
+   <div style="cursor:pointer" onclick="go('alertas')" title="Ver alertas de documentación"><div class="v" style="color:var(--rust)">${ST.alertas?ST.alertas.resumen.vencidos:'—'}</div><div class="l">Documentos vencidos</div></div>
   </div>
-  <div class="msg warn" style="margin-top:20px"><b>Documentación del personal.</b>
-   Saúl Quinto Palomino tiene el SCTR vencido y no puede asignarse a una obra.
-   <button class="btn ghost sm" style="margin-left:8px" onclick="go('alertas')">Ver alertas</button></div>
+  ${bannerDocumentacion()}
   ${cota('Obras en ejecución','HU11','h3')}
   <div class="card"><table><thead><tr><th>Obra</th><th>Cliente</th><th style="width:210px">Avance</th><th></th></tr></thead><tbody>
    ${PROY.filter(p=>p.e==='En Ejecución').map(p=>`<tr><td><b>${p.n}</b></td><td>${p.c}</td>
@@ -503,19 +515,32 @@ V.docpers=async()=>{
   <p class="hint" style="margin-top:12px">Una vigencia está «Por vencer» cuando faltan 30 días o menos. Un colaborador con documentación vencida o sin registrar no puede asignarse a una cuadrilla.</p></div>`;
 };
 
-V.alertas=()=>`${navbar()}${crumbs([['Personal','personal'],['Alertas de documentación']])}
+V.alertas=()=>{
+  const r=ST.alertas;
+  const cabecera=`${navbar()}${crumbs([['Personal','personal'],['Alertas de documentación']])}
  <div class="page"><div class="phead"><div><h1>Alertas de documentación</h1>
-   <p>Colaboradores con SCTR o examen médico ocupacional vencido o próximo a vencer.</p></div>${ST.hu?'<span class="hu">HU24</span>':''}</div>
-  <div class="msg warn">Se envió el aviso diario por correo con 3 colaboradores afectados.</div>
-  <div class="card"><table><thead><tr><th>Colaborador</th><th>Documento</th><th>Vence</th><th class="num">Días</th><th>Estado</th><th></th></tr></thead><tbody>
-   <tr><td><b>Saúl Quinto Palomino</b></td><td>SCTR</td><td>18/08/2026</td><td class="num" style="color:var(--rust)">−23</td><td>${dt('Vencido')}</td>
-    <td><button class="btn ghost sm" onclick="go('docpers')">Registrar renovación</button></td></tr>
-   <tr><td><b>Julio Ramos Bellido</b></td><td>SCTR</td><td>24/09/2026</td><td class="num">14</td><td>${dt('Por vencer')}</td>
-    <td><button class="btn ghost sm" onclick="go('docpers')">Registrar renovación</button></td></tr>
-   <tr><td><b>Nilo Achahui Mamani</b></td><td>Examen médico ocupacional</td><td>02/10/2026</td><td class="num">22</td><td>${dt('Por vencer')}</td>
-    <td><button class="btn ghost sm" onclick="go('docpers')">Registrar renovación</button></td></tr>
-  </tbody></table></div>
-  <p class="hint" style="margin-top:12px">Un colaborador con documentación vencida no puede asignarse a una cuadrilla.</p></div>`;
+   <p>Colaboradores activos con SCTR o examen médico ocupacional vencido o que vence en los próximos 30 días.</p></div>${ST.hu?'<span class="hu">HU24</span>':''}</div>
+  ${ST.msg||''}`;
+  if(!r) return `${cabecera}<div class="msg bad">No se pudieron cargar las alertas. Intente nuevamente.</div></div>`;
+
+  const {porVencer,vencidos}=r.resumen;
+  const envio=r.ultimoEnvio
+    ?`Último aviso por correo: ${fmtFecha(r.ultimoEnvio.fecha)} (${r.ultimoEnvio.alertas} alerta${r.ultimoEnvio.alertas===1?'':'s'}, ${r.ultimoEnvio.destinatarios} destinatario${r.ultimoEnvio.destinatarios===1?'':'s'}).`
+    :'Aún no se ha enviado ningún aviso por correo.';
+  return `${cabecera}
+  <div class="kpi" style="margin-bottom:16px">
+   <div><div class="v" style="color:var(--ambar)">${porVencer}</div><div class="l">Por vencer</div></div>
+   <div><div class="v" style="color:var(--rust)">${vencidos}</div><div class="l">Vencidos</div></div></div>
+  <div class="card"><div style="overflow-x:auto"><table><thead><tr><th>Colaborador</th><th>Documento</th><th>Vencimiento</th><th class="num">Días restantes</th><th>Estado</th><th></th></tr></thead><tbody>
+   ${r.alertas.map(a=>`<tr><td><b>${esc(a.colaborador)}</b></td><td>${esc(a.documento)}</td><td>${fmtFecha(a.vencimiento)}</td>
+    <td class="num" ${a.diasRestantes<0?'style="color:var(--rust)"':''}>${a.diasRestantes<0?'−'+(-a.diasRestantes):a.diasRestantes}</td>
+    <td>${etiquetaDoc(a.estado)}</td>
+    <td style="width:190px"><button class="btn ghost sm" onclick="abrirDocumentacion(${a.trabajadorId})">Registrar renovación</button></td></tr>`).join('')
+     ||'<tr><td colspan="6" style="text-align:center;color:var(--concrete)">No hay documentos vencidos ni por vencer. Toda la documentación del personal está vigente.</td></tr>'}
+  </tbody></table></div></div>
+  <p class="hint" style="margin-top:12px">Cada día se envía un resumen por correo al Gerente de Operaciones. ${envio}<br>
+   Un colaborador con documentación vencida no puede asignarse a una cuadrilla. Al registrar la renovación, la alerta desaparece.</p></div>`;
+};
 
 V.proyectos = async () => {
   let filas = '';

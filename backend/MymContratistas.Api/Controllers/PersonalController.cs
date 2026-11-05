@@ -114,6 +114,34 @@ namespace MymContratistas.Api.Controllers
             return Ok(lista.Select(t => ProyectarConDocumentos(t, vigencias.GetValueOrDefault(t.Id), hoy)));
         }
 
+        // GET: api/personal/alertas  — documentación vencida o por vencer del personal activo (HU24)
+        [HttpGet("alertas")]
+        public async Task<IActionResult> Alertas()
+        {
+            var alertas = await VigenciasDocumentales.AlertasAsync(_context, DateOnly.FromDateTime(DateTime.Now));
+            var ultimoEnvio = await _context.EnviosAlertaDocumental.OrderByDescending(e => e.Fecha)
+                .Select(e => new { fecha = e.Fecha, alertas = e.Alertas, destinatarios = e.Destinatarios }).FirstOrDefaultAsync();
+            return Ok(new
+            {
+                resumen = new
+                {
+                    porVencer = alertas.Count(a => a.Estado == "Por vencer"),
+                    vencidos = alertas.Count(a => a.Estado == "Vencido"),
+                    total = alertas.Count
+                },
+                alertas = alertas.Select(a => new
+                {
+                    trabajadorId = a.TrabajadorId,
+                    colaborador = a.Colaborador,
+                    documento = a.Documento,
+                    vencimiento = a.Vencimiento,
+                    diasRestantes = a.DiasRestantes,
+                    estado = a.Estado
+                }),
+                ultimoEnvio
+            });
+        }
+
         // GET: api/personal/{id}  — ficha del colaborador con su estado documental
         [HttpGet("{id:int}")]
         public async Task<IActionResult> Obtener(int id)
