@@ -4,7 +4,9 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using MymContratistas.Api.Data;
+using MymContratistas.Api.Services;
 using Xunit;
 
 // Varias pruebas cambian el directorio de trabajo (los controladores guardan archivos en ./Uploads)
@@ -44,6 +46,27 @@ namespace MymContratistas.Api.Tests
         // Contexto nuevo sobre la misma base, para leer lo que realmente quedó guardado
         protected ApplicationDbContext OtroContexto() =>
             new(new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(_conexion).Options);
+    }
+
+    // Guarda los correos que la aplicación intentó enviar; los destinatarios de "Falla" simulan un SMTP caído
+    public sealed class CorreoDePrueba : IEmailService
+    {
+        public List<(string Para, string Asunto, string Cuerpo)> Enviados { get; } = new();
+        public HashSet<string> Falla { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public Task EnviarAsync(string destinatario, string asunto, string cuerpoHtml, IReadOnlyList<AdjuntoCorreo>? adjuntos = null)
+        {
+            if (Falla.Contains(destinatario)) throw new InvalidOperationException("SMTP no disponible");
+            Enviados.Add((destinatario, asunto, cuerpoHtml));
+            return Task.CompletedTask;
+        }
+    }
+
+    public static class Notificaciones
+    {
+        public static NotificacionHitoService Con(IEmailService correo) =>
+            new(correo, NullLogger<NotificacionHitoService>.Instance);
+        public static NotificacionHitoService Silenciosa() => Con(new CorreoDePrueba());
     }
 
     public static class Respuesta

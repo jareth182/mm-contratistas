@@ -26,8 +26,7 @@ function navbar(){
   }else{
     const on=v=>ST.v===v?'on':'';
     links=`<button class="${on('c-obra')||on('c-seg')}" onclick="go('c-obra')">Mis proyectos</button>
-      <button class="${on('c-gastos')}" onclick="go('c-gastos')">Gastos</button>
-      <button class="${on('c-cmt')}" onclick="go('c-cmt')">Comentarios</button>`;
+      <button class="${on('c-gastos')}" onclick="go('c-gastos')">Gastos</button>`;
     user=userMenu(iniciales(ST.usuario.nombreCompleto),ST.usuario.nombreCompleto,ST.usuario.rol,false);
   }
   return `<header class="nav"><div class="nav-in">
@@ -101,4 +100,21 @@ function elevHitos(hitos) {
       <div class="mk2"></div><div class="nm">${esc(h.nombre)}</div><div class="mt2">${h.avancePorcentaje}% · peso ${h.peso}%</div></div>`).join('')}</div>
     <div class="cap"><span>Inicio del proyecto</span><span>Entrega</span></div>
   </div></div>`;
+}
+
+// Conversación de un hito (HU22): cada comentario del cliente con sus respuestas, en orden cronológico.
+// «acciones» recibe el comentario del cliente y devuelve el HTML de sus botones/formulario (solo en administración).
+function hiloComentarios(comentarios, acciones) {
+  const respuestasDe = id => comentarios.filter(c => c.respondeA === id);
+  const burbuja = (c, extra) => `<div class="cmt${c.esPersonal ? ' emp' : ''}"${extra || ''}>
+      <b>${esc(c.autor)}</b>${c.esPersonal ? ' <span class="tg mt">M/M Contratistas</span>' : ''}<time>${fmtFechaHora(c.fecha)}</time>
+      <p style="margin:5px 0 0;white-space:pre-wrap">${esc(c.texto)}</p></div>`;
+  const raices = comentarios.filter(c => !c.respondeA);
+  if (!raices.length) return '<p class="hint">Aún no hay comentarios en este hito.</p>';
+  return raices.map(r => {
+    const respuestas = respuestasDe(r.id);
+    return `<div style="margin-bottom:10px;border:1px solid var(--line-2)">${burbuja(r, ' style="padding:11px 12px"')}
+      ${respuestas.map(x => burbuja(x, ' style="margin-left:18px"')).join('')}
+      ${acciones ? acciones(r, respuestas.length) : ''}</div>`;
+  }).join('');
 }
