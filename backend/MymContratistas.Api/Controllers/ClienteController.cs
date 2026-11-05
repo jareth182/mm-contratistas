@@ -165,7 +165,7 @@ namespace MymContratistas.Api.Controllers
                 .FirstOrDefaultAsync();
             if (foto == null || !await (await HitosDelClienteAsync()).AnyAsync(h => h.Id == foto.HitoId)) return SinPermiso();
 
-            var ruta = Path.Combine(ObrasController.CarpetaDeAvances, foto.Archivo);
+            var ruta = RutasSeguras.Archivo(ObrasController.CarpetaDeAvances, foto.Archivo);
             if (!System.IO.File.Exists(ruta)) return NotFound("El archivo físico no se encontró.");
             return PhysicalFile(ruta, Path.GetExtension(foto.Archivo) == ".png" ? "image/png" : "image/jpeg");
         }
@@ -239,15 +239,18 @@ namespace MymContratistas.Api.Controllers
             return _context.Hitos.Where(h => obras.Any(o => o.Id == h.ObraId));
         }
 
-        // La obra se vincula por la ficha de cliente de la cuenta; las anteriores, por el nombre del cliente
+        // Base de toda la autorización por recurso (HT-06): obras del cliente y, a partir de ellas, sus hitos, fotos,
+        // documentos, gastos y comprobantes. Una obra se vincula por la ficha de cliente de la cuenta. Solo las cuentas
+        // SIN ficha (anteriores a HU11) reconocen además las obras sin ficha cuyo nombre de cliente coincide con el suyo:
+        // una cuenta con ficha nunca llega a obras de otro cliente por tener el mismo nombre.
         private async Task<IQueryable<Obra>> ObrasDelClienteAsync()
         {
             var nombre = (User?.FindFirstValue(ClaimTypes.Name) ?? string.Empty).Trim().ToLower();
             int.TryParse(User?.FindFirstValue(ClaimTypes.NameIdentifier), out var usuarioId);
             var clienteId = await _context.Usuarios.Where(u => u.Id == usuarioId).Select(u => u.ClienteId).FirstOrDefaultAsync();
 
-            return _context.Obras.Where(o => (clienteId != null && o.ClienteId == clienteId)
-                                          || (o.ClienteId == null && o.Cliente.Trim().ToLower() == nombre));
+            if (clienteId != null) return _context.Obras.Where(o => o.ClienteId == clienteId);
+            return _context.Obras.Where(o => nombre != "" && o.ClienteId == null && o.Cliente.Trim().ToLower() == nombre);
         }
     }
 }

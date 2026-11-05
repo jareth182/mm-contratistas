@@ -87,6 +87,7 @@ if (app.Environment.IsDevelopment())
 }
 
 // 3. Aplicar CORS antes de las rutas
+app.UseMiddleware<EncabezadosDeSeguridad>();
 app.UseCors("PermitirTodo");
 
 app.UseHttpsRedirection();

@@ -425,7 +425,7 @@ namespace MymContratistas.Api.Controllers
             var foto = await _context.FotosAvance.FindAsync(id);
             if (foto == null) return NotFound("La fotografía no existe.");
 
-            var ruta = Path.Combine(CarpetaAvances(), foto.Archivo);
+            var ruta = RutasSeguras.Archivo(CarpetaAvances(), foto.Archivo);
             if (!System.IO.File.Exists(ruta)) return NotFound("El archivo físico no se encontró.");
 
             return PhysicalFile(ruta, Path.GetExtension(foto.Archivo) == ".png" ? "image/png" : "image/jpeg");
@@ -548,7 +548,7 @@ namespace MymContratistas.Api.Controllers
         // Ruta del archivo físico; los documentos cargados antes de HU15 se guardaban con su nombre en Uploads
         internal static string RutaDocumento(Documento doc) => string.IsNullOrEmpty(doc.Archivo)
             ? Path.Combine(Directory.GetCurrentDirectory(), "Uploads", Path.GetFileName(doc.Nombre))
-            : Path.Combine(CarpetaDocumentos(), doc.Archivo);
+            : RutasSeguras.Archivo(CarpetaDocumentos(), doc.Archivo);
 
         internal static string TipoContenido(string nombre) => Path.GetExtension(nombre).ToLowerInvariant() switch
         {
@@ -811,7 +811,7 @@ namespace MymContratistas.Api.Controllers
         // Los gastos anteriores a HU17 guardaban el comprobante con su nombre original en Uploads
         public static string RutaComprobante(Gasto g) => string.IsNullOrEmpty(g.Archivo)
             ? Path.Combine(Directory.GetCurrentDirectory(), "Uploads", Path.GetFileName(g.ComprobanteUrl ?? string.Empty))
-            : Path.Combine(CarpetaGastos(), g.Archivo);
+            : RutasSeguras.Archivo(CarpetaGastos(), g.Archivo);
 
         internal static DateTime FechaOrden(string fecha) =>
             DateTime.TryParseExact(fecha, new[] { FormatoFechaGasto, "yyyy-MM-dd" }, System.Globalization.CultureInfo.InvariantCulture,
@@ -946,7 +946,7 @@ namespace MymContratistas.Api.Controllers
         // Los pagos anteriores a HU18 guardaban la constancia con su nombre original en Uploads
         public static string RutaConstancia(Pago p) => string.IsNullOrEmpty(p.Archivo)
             ? Path.Combine(Directory.GetCurrentDirectory(), "Uploads", Path.GetFileName(p.ConstanciaUrl ?? string.Empty))
-            : Path.Combine(CarpetaPagos(), p.Archivo);
+            : RutasSeguras.Archivo(CarpetaPagos(), p.Archivo);
 
         private static object ProyectarPago(Pago p) => new
         {

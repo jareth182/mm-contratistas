@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MymContratistas.Api.Data;
 using MymContratistas.Api.Models;
+using MymContratistas.Api.Services;
 
 namespace MymContratistas.Api.Controllers
 {
@@ -156,7 +157,7 @@ namespace MymContratistas.Api.Controllers
             var proyecto = await _context.Portafolio.Include(p => p.Imagenes).FirstOrDefaultAsync(p => p.Id == id);
             if (proyecto == null) return NotFound(new { mensaje = "El proyecto no existe." });
 
-            var archivos = proyecto.Imagenes.Select(i => Path.Combine(CarpetaImagenes(), i.Archivo)).ToList();
+            var archivos = proyecto.Imagenes.Select(i => RutasSeguras.Archivo(CarpetaImagenes(), i.Archivo)).ToList();
             _context.Portafolio.Remove(proyecto);
             await _context.SaveChangesAsync();
 
@@ -248,7 +249,7 @@ namespace MymContratistas.Api.Controllers
             if (restantes.Count == 0) proyecto.Estado = ProyectoPortafolio.Borrador;
             await _context.SaveChangesAsync();
 
-            var ruta = Path.Combine(CarpetaImagenes(), imagen.Archivo);
+            var ruta = RutasSeguras.Archivo(CarpetaImagenes(), imagen.Archivo);
             if (System.IO.File.Exists(ruta)) System.IO.File.Delete(ruta);
 
             return Ok(new { mensaje = "Imagen eliminada." });
@@ -261,7 +262,7 @@ namespace MymContratistas.Api.Controllers
             var imagen = await _context.ImagenesPortafolio.FindAsync(imagenId);
             if (imagen == null) return NotFound();
 
-            var ruta = Path.Combine(CarpetaImagenes(), imagen.Archivo);
+            var ruta = RutasSeguras.Archivo(CarpetaImagenes(), imagen.Archivo);
             if (!System.IO.File.Exists(ruta)) return NotFound();
 
             var tipo = Path.GetExtension(imagen.Archivo) == ".png" ? "image/png" : "image/jpeg";
