@@ -757,7 +757,7 @@ namespace MymContratistas.Api.Controllers
             ? Path.Combine(Directory.GetCurrentDirectory(), "Uploads", Path.GetFileName(g.ComprobanteUrl ?? string.Empty))
             : Path.Combine(CarpetaGastos(), g.Archivo);
 
-        private static DateTime FechaOrden(string fecha) =>
+        internal static DateTime FechaOrden(string fecha) =>
             DateTime.TryParseExact(fecha, new[] { FormatoFechaGasto, "yyyy-MM-dd" }, System.Globalization.CultureInfo.InvariantCulture,
                 System.Globalization.DateTimeStyles.None, out var f) ? f : DateTime.MinValue;
 

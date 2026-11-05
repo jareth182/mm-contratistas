@@ -1127,7 +1127,7 @@ V['c-seg']=async()=>{
   return `${navbar()}${crumbs([['Mis proyectos','c-obra'],['Seguimiento de obra']])}
  <div class="page"><div class="phead"><div><h1>${esc(obra.nombre)}</h1>
   <p>${esc(obra.cliente)}${obra.ubicacion?' · '+esc(obra.ubicacion):''}</p></div>
-  <div style="display:flex;gap:7px;align-items:center"><span class="tg ${obra.estado==='Finalizado'?'mt':'ok'}">${obra.estado==='Finalizado'?'Finalizado':'En ejecución'}</span>${ST.hu?'<span class="hu">HU20</span>':''}</div></div>
+  <div style="display:flex;gap:7px;align-items:center"><button class="btn ghost sm" onclick="abrirGastos(${obra.id})">Ver gastos</button><span class="tg ${obra.estado==='Finalizado'?'mt':'ok'}">${obra.estado==='Finalizado'?'Finalizado':'En ejecución'}</span>${ST.hu?'<span class="hu">HU20</span>':''}</div></div>
   ${ST.msg||''}
  <div class="kpi" style="margin-bottom:14px">
   <div><div class="v">${obra.avancePorcentaje}%</div><div class="l">Avance general</div></div>
@@ -1178,22 +1178,67 @@ async function detalleHitoCliente(hitoId){
     <button class="btn ghost sm" onclick="verDetalleHitoCliente(${hitoId})">Cerrar</button></div>${cuerpo}</div>`;
 }
 
-V['c-gastos']=()=>{const t=OBRA.part.reduce((a,p)=>a+p.gs,0);
- return `${navbar()}${crumbs([['Mis proyectos','c-obra'],['Gastos']])}
+/* ---- gastos del cliente (HU21) ---- */
+V['c-gastos']=async()=>{
+  const pagina=(titulo,cuerpo,migas)=>`${navbar()}${crumbs(migas||[['Mis proyectos','c-obra'],['Gastos']])}
+   <div class="page"><div class="phead"><div><h1>${titulo}</h1></div>${ST.hu?'<span class="hu">HU21</span>':''}</div>${ST.msg||''}${cuerpo}</div>`;
+
+  // Proyecto elegido; si no hay ninguno y el cliente solo tiene uno, se usa ese
+  if(!ST.obraCliId){
+    let obras=[],fallo=false;
+    try{const r=await apiFetch(`${API}/api/cliente/obras`);if(r.ok)obras=await r.json();else fallo=true}catch(e){fallo=true}
+    if(obras.length===1) ST.obraCliId=obras[0].id;
+    else return pagina('Gastos de mi obra',
+      fallo?'<div class="msg bad">No se pudo cargar sus proyectos. Intente nuevamente.</div>'
+      :!obras.length?'<div class="msg warn">Aún no tiene un proyecto asignado. Si cree que es un error, comuníquese con M/M Contratistas.</div>'
+      :`<div class="card"><div class="ch"><h4>Elija el proyecto</h4></div><table><tbody>
+        ${obras.map(o=>`<tr><td><b>${esc(o.nombre)}</b></td><td style="width:150px"><button class="btn sm" onclick="abrirGastos(${o.id})">Ver gastos</button></td></tr>`).join('')}
+        </tbody></table></div>`,[['Mis proyectos','c-obra'],['Gastos']]);
+  }
+
+  let datos=null,error=null;
+  try{
+    const r=await apiFetch(`${API}/api/cliente/obras/${ST.obraCliId}/gastos`);
+    if(r.ok) datos=await r.json();
+    else if(r.status===403){error=(await r.text())||'No tiene permisos para ver este proyecto.';ST.obraCliId=null}
+    else error='No se pudo cargar el detalle de gastos. Intente nuevamente.';
+  }catch(e){error='Error de conexión con el servidor.'}
+  if(!datos) return pagina('Gastos de mi obra',`<div class="msg bad">${esc(error)}</div>
+    <button class="btn" onclick="go('c-obra')">Volver a mis proyectos</button>`);
+
+  ST.partidasCli=datos.resumen.map(p=>p.partida);
+  if(ST.partidaCli&&!ST.partidasCli.includes(ST.partidaCli)) ST.partidaCli=null;
+  const visibles=ST.partidaCli?datos.gastos.filter(g=>g.partida===ST.partidaCli):datos.gastos;
+  const subtotal=visibles.reduce((a,g)=>a+g.monto,0);
+  const sinPartida=p=>p||'Sin partida';
+
+  return `${navbar()}${crumbs([['Mis proyectos','c-obra'],[esc(datos.obra.nombre),'c-seg'],['Gastos']])}
  <div class="page"><div class="phead"><div><h1>En qué se ha invertido</h1>
-  <p>Detalle de los gastos de su obra con el comprobante de cada uno.</p></div>${ST.hu?'<span class="hu">HU21</span>':''}</div>
+  <p>${esc(datos.obra.nombre)} · detalle de los gastos con el comprobante de cada uno.</p></div>${ST.hu?'<span class="hu">HU21</span>':''}</div>
+ ${ST.msg||''}
  <div class="kpi" style="margin-bottom:20px">
-  <div><div class="v">${S(t)}</div><div class="l">Invertido a la fecha</div></div>
-  <div><div class="v">${OBRA.av}%</div><div class="l">Avance de obra</div></div></div>
+  <div><div class="v">${S(datos.total)}</div><div class="l">Invertido a la fecha</div></div>
+  <div><div class="v">${datos.obra.avancePorcentaje}%</div><div class="l">Avance de obra</div></div>
+  <div><div class="v">${datos.gastos.length}</div><div class="l">Gastos registrados</div></div></div>
  <div class="card"><div class="ch"><h4>Resumen por partida</h4></div>
-  <table><tbody>${OBRA.part.filter(p=>p.gs>0).map(p=>`<tr><td><b>${p.n}</b></td><td class="num">${S(p.gs)}</td></tr>`).join('')}
+  <table><thead><tr><th>Partida</th><th class="num">Gastos</th><th class="num">Acumulado</th><th></th></tr></thead><tbody>
+  ${datos.resumen.map((p,i)=>`<tr${p.partida===ST.partidaCli?' style="background:#F5F7F8"':''}><td><b>${esc(sinPartida(p.partida))}</b></td>
+    <td class="num">${p.cantidad}</td><td class="num">${S(p.total)}</td>
+    <td style="width:130px"><button class="btn link" onclick="seleccionarPartidaCliente(${i})">${p.partida===ST.partidaCli?'Ver todos':'Ver detalle'}</button></td></tr>`).join('')
+    ||'<tr><td colspan="4" style="text-align:center;color:var(--concrete)">Aún no hay gastos registrados en su obra.</td></tr>'}
+  ${datos.resumen.length?`<tr style="background:#F5F7F8"><td><b>Total</b></td><td class="num"><b>${datos.gastos.length}</b></td><td class="num"><b>${S(datos.total)}</b></td><td></td></tr>`:''}
   </tbody></table></div>
- <div class="card" style="margin-top:20px"><div class="ch"><h4>Detalle · Concreto y acero</h4></div>
-  <table><thead><tr><th>Fecha</th><th>Concepto</th><th>Proveedor</th><th class="num">Monto</th><th></th></tr></thead><tbody>
-  ${OBRA.gastos.filter(g=>g.pa==='Concreto y acero'&&g.e!=='Anulado').map(g=>`<tr><td>${g.f}</td><td>${g.c}</td><td>${g.p}</td>
-   <td class="num">${S(g.m)}</td><td style="width:150px"><button class="btn link">Ver comprobante</button></td></tr>`).join('')}
+ <div class="card" style="margin-top:20px"><div class="ch"><h4>Detalle · ${ST.partidaCli?esc(sinPartida(ST.partidaCli)):'Todas las partidas'}</h4>
+  ${ST.partidaCli?'<button class="btn ghost sm" onclick="seleccionarPartidaCliente(-1)">Ver todos</button>':''}</div>
+  <table><thead><tr><th>Fecha</th><th>Concepto</th><th>Proveedor</th>${ST.partidaCli?'':'<th>Partida</th>'}<th class="num">Monto</th><th></th></tr></thead><tbody>
+  ${visibles.map(g=>`<tr><td>${esc(g.fecha)}</td><td>${esc(g.concepto)}</td><td>${esc(g.proveedor)||'—'}</td>
+   ${ST.partidaCli?'':`<td>${esc(sinPartida(g.partida))}</td>`}<td class="num">${S(g.monto)}</td>
+   <td style="width:150px">${g.comprobante?`<button class="btn link" onclick="verComprobanteCliente(${g.id})">Ver comprobante</button>`:'<span class="hint">Sin comprobante</span>'}</td></tr>`).join('')
+    ||`<tr><td colspan="${ST.partidaCli?5:6}" style="text-align:center;color:var(--concrete)">No hay gastos para mostrar.</td></tr>`}
+  ${visibles.length?`<tr style="background:#F5F7F8"><td colspan="${ST.partidaCli?3:4}"><b>Total</b></td><td class="num"><b>${S(subtotal)}</b></td><td></td></tr>`:''}
  </tbody></table></div>
- <p class="hint" style="margin-top:12px">No se muestran los pagos individuales al personal ni el margen de la empresa.</p></div>`;};
+ <p class="hint" style="margin-top:12px">No se muestran los pagos individuales al personal ni el margen de la empresa. Los gastos anulados no se incluyen en el detalle ni en los montos.</p></div>`;
+};
 
 V['c-cmt']=()=>`${navbar()}${crumbs([['Mis proyectos','c-obra'],['Comentarios']])}
  <div class="page" style="max-width:800px"><div class="phead"><div><h1>Comentarios · Estructura</h1>

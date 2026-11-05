@@ -44,6 +44,13 @@ async function apiFetch(url, opciones = {}) {
   return respuesta;
 }
 
+// Nombre de archivo indicado por el servidor en Content-Disposition
+function nombreDeRespuesta(respuesta, porDefecto) {
+  const cabecera = respuesta.headers.get('Content-Disposition') || '';
+  const coincidencia = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cabecera);
+  return coincidencia ? decodeURIComponent(coincidencia[1]) : porDefecto;
+}
+
 // Descarga un archivo protegido (window.open no puede enviar el token)
 async function descargarArchivo(url, nombreSugerido) {
   try {
@@ -52,9 +59,7 @@ async function descargarArchivo(url, nombreSugerido) {
     const blob = await respuesta.blob();
     const enlace = document.createElement('a');
     enlace.href = URL.createObjectURL(blob);
-    const cabecera = respuesta.headers.get('Content-Disposition') || '';
-    const coincidencia = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cabecera);
-    enlace.download = coincidencia ? decodeURIComponent(coincidencia[1]) : (nombreSugerido || 'archivo');
+    enlace.download = nombreDeRespuesta(respuesta, nombreSugerido || 'archivo');
     document.body.appendChild(enlace);
     enlace.click();
     enlace.remove();

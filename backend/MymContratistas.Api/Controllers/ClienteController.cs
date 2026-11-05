@@ -47,6 +47,8 @@ namespace MymContratistas.Api.Controllers
             return Ok(obras);
         }
 
+        private const string EstadoAnulado = "Anulado";
+
         public const string MensajeSinPermiso = "No tiene permisos para ver este proyecto. Solo puede consultar los proyectos vinculados a su cuenta.";
 
         private IActionResult SinPermiso() => StatusCode(StatusCodes.Status403Forbidden, MensajeSinPermiso);
@@ -117,6 +119,54 @@ namespace MymContratistas.Api.Controllers
             var ruta = Path.Combine(ObrasController.CarpetaDeAvances, foto.Archivo);
             if (!System.IO.File.Exists(ruta)) return NotFound("El archivo físico no se encontró.");
             return PhysicalFile(ruta, Path.GetExtension(foto.Archivo) == ".png" ? "image/png" : "image/jpeg");
+        }
+
+        // GET: api/cliente/obras/{id}/gastos  (HU21: resumen acumulado por partida y detalle de gastos)
+        // Solo gastos vigentes: los anulados no se listan ni suman. No incluye presupuesto, saldos, pagos al personal ni márgenes.
+        [HttpGet("obras/{id}/gastos")]
+        public async Task<IActionResult> GastosDeObra(int id)
+        {
+            var obra = await (await ObrasDelClienteAsync()).Where(o => o.Id == id)
+                .Select(o => new { o.Id, o.Nombre, o.AvancePorcentaje })
+                .FirstOrDefaultAsync();
+            if (obra == null) return SinPermiso();
+
+            var gastos = (await _context.Gastos.Where(g => g.ObraId == id && g.Estado != EstadoAnulado).ToListAsync())
+                .OrderByDescending(g => ObrasController.FechaOrden(g.Fecha)).ThenByDescending(g => g.Id).ToList();
+            return Ok(new
+            {
+                obra,
+                total = gastos.Sum(g => g.Monto),
+                resumen = gastos.GroupBy(g => g.PartidaNombre)
+                    .Select(p => new { partida = p.Key, total = p.Sum(g => g.Monto), cantidad = p.Count() })
+                    .OrderByDescending(p => p.total).ThenBy(p => p.partida).ToList(),
+                gastos = gastos.Select(g => new
+                {
+                    id = g.Id,
+                    fecha = g.Fecha,
+                    concepto = g.Concepto,
+                    proveedor = g.Proveedor,
+                    partida = g.PartidaNombre,
+                    monto = g.Monto,
+                    tipoComprobante = g.TipoComprobante,
+                    numeroComprobante = g.NumeroComprobante,
+                    comprobante = string.IsNullOrEmpty(g.ComprobanteUrl) ? null : g.ComprobanteUrl
+                })
+            });
+        }
+
+        // GET: api/cliente/gastos/{id}/comprobante  (se usa para ver el comprobante ampliado y para descargarlo)
+        [HttpGet("gastos/{id}/comprobante")]
+        public async Task<IActionResult> ComprobanteDeGasto(int id)
+        {
+            var gasto = await _context.Gastos.FirstOrDefaultAsync(g => g.Id == id);
+            if (gasto == null || !await (await ObrasDelClienteAsync()).AnyAsync(o => o.Id == gasto.ObraId)) return SinPermiso();
+            // Dentro de su propio proyecto, un gasto anulado no existe para el cliente
+            if (gasto.Estado == EstadoAnulado || string.IsNullOrEmpty(gasto.ComprobanteUrl)) return NotFound("Comprobante no encontrado.");
+
+            var ruta = ObrasController.RutaComprobante(gasto);
+            if (!System.IO.File.Exists(ruta)) return NotFound("El archivo físico no se encontró.");
+            return PhysicalFile(ruta, ObrasController.TipoContenido(gasto.ComprobanteUrl), gasto.ComprobanteUrl);
         }
 
         // GET: api/cliente/documentos/{id}/descargar
