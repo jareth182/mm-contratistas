@@ -144,10 +144,10 @@ namespace MymContratistas.Api.Controllers
             await _context.SaveChangesAsync();
 
             // Gerente de Operaciones activo: el aviso nunca impide que el comentario quede registrado
-            var correos = await _context.Usuarios
-                .Where(u => u.Rol.Nombre == NombresRol.Gerente && u.Estado == "Activo" && u.Correo != "")
-                .Select(u => u.Correo).ToListAsync();
-            var avisado = await _notificacion.ComentarioDelClienteAsync(hito.Obra!, hito, comentario, correos);
+            var gerentes = await _context.Usuarios
+                .Where(u => u.Rol.Nombre == NombresRol.Gerente && u.Estado == "Activo")
+                .Select(u => new DestinatarioNotificacion(u.Id, u.Correo)).ToListAsync();
+            var avisado = await _notificacion.ComentarioDelClienteAsync(hito.Obra!, hito, comentario, gerentes);
 
             return Ok(new
             {
@@ -165,31 +165,46 @@ namespace MymContratistas.Api.Controllers
                 .FirstOrDefaultAsync();
             if (foto == null || !await (await HitosDelClienteAsync()).AnyAsync(h => h.Id == foto.HitoId)) return SinPermiso();
 
-            var ruta = Path.Combine(ObrasController.CarpetaDeAvances, foto.Archivo);
+            var ruta = RutasSeguras.Archivo(ObrasController.CarpetaDeAvances, foto.Archivo);
             if (!System.IO.File.Exists(ruta)) return NotFound("El archivo físico no se encontró.");
             return PhysicalFile(ruta, Path.GetExtension(foto.Archivo) == ".png" ? "image/png" : "image/jpeg");
         }
 
         // GET: api/cliente/obras/{id}/gastos  (HU21: resumen acumulado por partida y detalle de gastos)
         // Solo gastos vigentes: los anulados no se listan ni suman. No incluye presupuesto, saldos, pagos al personal ni márgenes.
+        // El resumen y el total abarcan todos los gastos vigentes; los filtros y la paginación (HT-07) solo afectan al detalle.
         [HttpGet("obras/{id}/gastos")]
-        public async Task<IActionResult> GastosDeObra(int id)
+        public async Task<IActionResult> GastosDeObra(int id, [FromQuery] FiltroListado? filtro = null)
         {
+            filtro ??= new FiltroListado();
             var obra = await (await ObrasDelClienteAsync()).Where(o => o.Id == id)
                 .Select(o => new { o.Id, o.Nombre, o.AvancePorcentaje })
                 .FirstOrDefaultAsync();
             if (obra == null) return SinPermiso();
+            var errorFiltro = filtro.Validar(out var desde, out var hasta);
+            if (errorFiltro != null) return BadRequest(errorFiltro);
 
-            var gastos = (await _context.Gastos.Where(g => g.ObraId == id && g.Estado != EstadoAnulado).ToListAsync())
+            var vigentes = await _context.Gastos.Where(g => g.ObraId == id && g.Estado != EstadoAnulado).ToListAsync();
+
+            var detalle = vigentes.AsEnumerable();
+            if (filtro.PartidaElegida != null) detalle = detalle.Where(g => g.PartidaNombre == filtro.PartidaElegida);
+            if (filtro.Texto != null)
+                detalle = detalle.Where(g => g.Concepto.ToLowerInvariant().Contains(filtro.Texto) || g.Proveedor.ToLowerInvariant().Contains(filtro.Texto));
+            var coinciden = detalle.Where(g => FiltroListado.EnRango(ObrasController.FechaOrden(g.Fecha), desde, hasta))
                 .OrderByDescending(g => ObrasController.FechaOrden(g.Fecha)).ThenByDescending(g => g.Id).ToList();
+            var pagina = Paginacion.Paginar(coinciden, filtro.Pagina, filtro.Tamano);
+
             return Ok(new
             {
                 obra,
-                total = gastos.Sum(g => g.Monto),
-                resumen = gastos.GroupBy(g => g.PartidaNombre)
+                total = vigentes.Sum(g => g.Monto),
+                cantidad = vigentes.Count,
+                resumen = vigentes.GroupBy(g => g.PartidaNombre)
                     .Select(p => new { partida = p.Key, total = p.Sum(g => g.Monto), cantidad = p.Count() })
                     .OrderByDescending(p => p.total).ThenBy(p => p.partida).ToList(),
-                gastos = gastos.Select(g => new
+                filtrado = new { cantidad = coinciden.Count, subtotal = coinciden.Sum(g => g.Monto) },
+                paginacion = pagina.Info,
+                gastos = pagina.Items.Select(g => new
                 {
                     id = g.Id,
                     fecha = g.Fecha,
@@ -239,15 +254,18 @@ namespace MymContratistas.Api.Controllers
             return _context.Hitos.Where(h => obras.Any(o => o.Id == h.ObraId));
         }
 
-        // La obra se vincula por la ficha de cliente de la cuenta; las anteriores, por el nombre del cliente
+        // Base de toda la autorización por recurso (HT-06): obras del cliente y, a partir de ellas, sus hitos, fotos,
+        // documentos, gastos y comprobantes. Una obra se vincula por la ficha de cliente de la cuenta. Solo las cuentas
+        // SIN ficha (anteriores a HU11) reconocen además las obras sin ficha cuyo nombre de cliente coincide con el suyo:
+        // una cuenta con ficha nunca llega a obras de otro cliente por tener el mismo nombre.
         private async Task<IQueryable<Obra>> ObrasDelClienteAsync()
         {
             var nombre = (User?.FindFirstValue(ClaimTypes.Name) ?? string.Empty).Trim().ToLower();
             int.TryParse(User?.FindFirstValue(ClaimTypes.NameIdentifier), out var usuarioId);
             var clienteId = await _context.Usuarios.Where(u => u.Id == usuarioId).Select(u => u.ClienteId).FirstOrDefaultAsync();
 
-            return _context.Obras.Where(o => (clienteId != null && o.ClienteId == clienteId)
-                                          || (o.ClienteId == null && o.Cliente.Trim().ToLower() == nombre));
+            if (clienteId != null) return _context.Obras.Where(o => o.ClienteId == clienteId);
+            return _context.Obras.Where(o => nombre != "" && o.ClienteId == null && o.Cliente.Trim().ToLower() == nombre);
         }
     }
 }

@@ -26,6 +26,7 @@ namespace MymContratistas.Api.Data // <-- Aquí estaba el detalle
         public DbSet<Trabajador> Personal { get; set; }
         public DbSet<VigenciaDocumento> Vigencias { get; set; }
         public DbSet<EnvioAlertaDocumental> EnviosAlertaDocumental { get; set; }
+        public DbSet<Notificacion> Notificaciones { get; set; }
         public DbSet<SolicitudCotizacion> SolicitudesCotizacion { get; set; }
         public DbSet<AdjuntoCotizacion> AdjuntosCotizacion { get; set; }
 
@@ -48,8 +49,19 @@ namespace MymContratistas.Api.Data // <-- Aquí estaba el detalle
                 .HasMany(h => h.Comentarios).WithOne(c => c.Hito).HasForeignKey(c => c.HitoId).OnDelete(DeleteBehavior.Cascade);
             modelBuilder.Entity<ComentarioHito>()
                 .HasOne(c => c.ComentarioPadre).WithMany().HasForeignKey(c => c.ComentarioPadreId).OnDelete(DeleteBehavior.NoAction);
-            modelBuilder.Entity<ComentarioHito>().HasIndex(c => c.HitoId);
+            modelBuilder.Entity<ComentarioHito>().HasIndex(c => new { c.HitoId, c.Fecha });
+            // Índices de los listados de seguimiento y gastos (HT-07): cada uno empieza por la obra o el hito de la consulta
+            modelBuilder.Entity<Gasto>().HasIndex(g => new { g.ObraId, g.Estado });
+            modelBuilder.Entity<Gasto>().HasIndex(g => new { g.ObraId, g.PartidaNombre });
+            modelBuilder.Entity<Pago>().HasIndex(p => new { p.ObraId, p.Estado });
+            modelBuilder.Entity<Pago>().HasIndex(p => new { p.ObraId, p.PartidaNombre });
+            modelBuilder.Entity<Hito>().HasIndex(h => new { h.ObraId, h.Orden });
+            modelBuilder.Entity<AvanceHito>().HasIndex(a => new { a.HitoId, a.Fecha });
             modelBuilder.Entity<EnvioAlertaDocumental>().HasIndex(e => e.Fecha).IsUnique();
+            // Control de duplicados (único por evento y destinatario) y consultas de la campana de cada usuario
+            modelBuilder.Entity<Notificacion>().HasIndex(n => n.ClaveDeduplicacion).IsUnique();
+            modelBuilder.Entity<Notificacion>().HasIndex(n => new { n.UsuarioId, n.Canal, n.Leida, n.Fecha });
+            modelBuilder.Entity<Notificacion>().HasIndex(n => new { n.Estado, n.Fecha });
             modelBuilder.Entity<Cliente>().HasIndex(c => c.Documento).IsUnique();
             modelBuilder.Entity<Trabajador>().ToTable("Personal").HasIndex(t => t.Documento).IsUnique();
             modelBuilder.Entity<VigenciaDocumento>().HasIndex(v => new { v.TrabajadorId, v.Tipo });

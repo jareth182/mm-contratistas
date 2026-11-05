@@ -44,17 +44,17 @@ namespace MymContratistas.Api.Services
                 return new(ResultadoEnvioAlertas.SinAlertas, 0, 0);
             }
 
-            var correos = await _context.Usuarios
+            var gerentes = await _context.Usuarios
                 .Where(u => u.Rol.Nombre == NombresRol.Gerente && u.Estado == "Activo" && u.Correo != "")
-                .Select(u => u.Correo).ToListAsync();
-            if (correos.Count == 0)
+                .Select(u => new DestinatarioNotificacion(u.Id, u.Correo)).ToListAsync();
+            if (gerentes.Count == 0)
             {
                 _logger.LogWarning("Hay {Alertas} alerta(s) de documentación del personal pero no hay un Gerente de Operaciones activo a quien avisar", alertas.Count);
                 await RegistrarAsync(hoy, alertas.Count, 0);
                 return new(ResultadoEnvioAlertas.SinDestinatarios, alertas.Count, 0);
             }
 
-            var enviados = await _notificacion.AlertasDocumentalesAsync(correos, alertas, hoy);
+            var enviados = await _notificacion.AlertasDocumentalesAsync(gerentes, alertas, hoy);
             if (enviados == 0) return new(ResultadoEnvioAlertas.Fallido, alertas.Count, 0);
 
             await RegistrarAsync(hoy, alertas.Count, enviados);
@@ -63,8 +63,19 @@ namespace MymContratistas.Api.Services
 
         private async Task RegistrarAsync(DateOnly hoy, int alertas, int destinatarios)
         {
-            _context.EnviosAlertaDocumental.Add(new EnvioAlertaDocumental { Fecha = hoy, EnviadoEn = DateTime.UtcNow, Alertas = alertas, Destinatarios = destinatarios });
-            await _context.SaveChangesAsync();
+            var registro = new EnvioAlertaDocumental { Fecha = hoy, EnviadoEn = DateTime.UtcNow, Alertas = alertas, Destinatarios = destinatarios };
+            _context.EnviosAlertaDocumental.Add(registro);
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                // Si otra instancia de la aplicación registró el día primero no hay nada más que hacer: los correos ya están
+                // protegidos contra duplicados por NotificacionService. Cualquier otro error sí se propaga.
+                _context.Entry(registro).State = EntityState.Detached;
+                if (!await _context.EnviosAlertaDocumental.AnyAsync(e => e.Fecha == hoy)) throw;
+            }
         }
     }
 }

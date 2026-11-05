@@ -404,13 +404,14 @@ namespace MymContratistas.Api.Controllers
             await _context.SaveChangesAsync();
 
             // Se avisa a quien hizo el comentario; si su cuenta ya no existe, al correo de la ficha del cliente
-            var correo = await _context.Usuarios.Where(u => u.Id == comentario.AutorUsuarioId).Select(u => u.Correo).FirstOrDefaultAsync();
+            var cuenta = await _context.Usuarios.Where(u => u.Id == comentario.AutorUsuarioId).Select(u => new { u.Id, u.Correo }).FirstOrDefaultAsync();
+            var correo = cuenta?.Correo;
             if (string.IsNullOrWhiteSpace(correo)) correo = comentario.Hito!.Obra!.ClienteRegistro?.Correo;
 
             var mensaje = "Respuesta enviada. El cliente ya puede verla en su panel.";
             if (string.IsNullOrWhiteSpace(correo))
                 mensaje += " El cliente no tiene correo registrado, por lo que no se le notificó.";
-            else if (await _notificacion.RespuestaAlClienteAsync(comentario.Hito!.Obra!, comentario.Hito, respuesta, correo))
+            else if (await _notificacion.RespuestaAlClienteAsync(comentario.Hito!.Obra!, comentario.Hito, respuesta, new DestinatarioNotificacion(cuenta?.Id, correo)))
                 mensaje += " Se notificó al cliente por correo.";
             else
                 mensaje += " No se pudo enviar el correo de aviso al cliente.";
@@ -424,7 +425,7 @@ namespace MymContratistas.Api.Controllers
             var foto = await _context.FotosAvance.FindAsync(id);
             if (foto == null) return NotFound("La fotografía no existe.");
 
-            var ruta = Path.Combine(CarpetaAvances(), foto.Archivo);
+            var ruta = RutasSeguras.Archivo(CarpetaAvances(), foto.Archivo);
             if (!System.IO.File.Exists(ruta)) return NotFound("El archivo físico no se encontró.");
 
             return PhysicalFile(ruta, Path.GetExtension(foto.Archivo) == ".png" ? "image/png" : "image/jpeg");
@@ -547,7 +548,7 @@ namespace MymContratistas.Api.Controllers
         // Ruta del archivo físico; los documentos cargados antes de HU15 se guardaban con su nombre en Uploads
         internal static string RutaDocumento(Documento doc) => string.IsNullOrEmpty(doc.Archivo)
             ? Path.Combine(Directory.GetCurrentDirectory(), "Uploads", Path.GetFileName(doc.Nombre))
-            : Path.Combine(CarpetaDocumentos(), doc.Archivo);
+            : RutasSeguras.Archivo(CarpetaDocumentos(), doc.Archivo);
 
         internal static string TipoContenido(string nombre) => Path.GetExtension(nombre).ToLowerInvariant() switch
         {
@@ -810,7 +811,7 @@ namespace MymContratistas.Api.Controllers
         // Los gastos anteriores a HU17 guardaban el comprobante con su nombre original en Uploads
         public static string RutaComprobante(Gasto g) => string.IsNullOrEmpty(g.Archivo)
             ? Path.Combine(Directory.GetCurrentDirectory(), "Uploads", Path.GetFileName(g.ComprobanteUrl ?? string.Empty))
-            : Path.Combine(CarpetaGastos(), g.Archivo);
+            : RutasSeguras.Archivo(CarpetaGastos(), g.Archivo);
 
         internal static DateTime FechaOrden(string fecha) =>
             DateTime.TryParseExact(fecha, new[] { FormatoFechaGasto, "yyyy-MM-dd" }, System.Globalization.CultureInfo.InvariantCulture,
@@ -833,17 +834,35 @@ namespace MymContratistas.Api.Controllers
         };
 
         // GET: api/obras/{obraId}/gastos  (del más reciente al más antiguo, con el saldo de cada partida)
+        // Filtros y paginación estándar (HT-07). «resumen» cuenta todo lo que cumple los filtros, no solo la página.
         [HttpGet("{obraId}/gastos")]
-        public async Task<IActionResult> ListarGastos(int obraId)
+        public async Task<IActionResult> ListarGastos(int obraId, [FromQuery] FiltroListado? filtro = null)
         {
+            filtro ??= new FiltroListado();
             if (!await _context.Obras.AnyAsync(o => o.Id == obraId)) return NotFound("La obra no existe.");
+            var errorFiltro = filtro.Validar(out var desde, out var hasta);
+            if (errorFiltro != null) return BadRequest(errorFiltro);
 
-            var gastos = await _context.Gastos.Where(g => g.ObraId == obraId).ToListAsync();
+            var consulta = _context.Gastos.Where(g => g.ObraId == obraId);
+            if (filtro.EstadoElegido != null) consulta = consulta.Where(g => g.Estado == filtro.EstadoElegido);
+            if (filtro.PartidaElegida != null) consulta = consulta.Where(g => g.PartidaNombre == filtro.PartidaElegida);
+            if (filtro.Texto != null)
+            {
+                var texto = filtro.Texto;
+                consulta = consulta.Where(g => g.Concepto.ToLower().Contains(texto) || g.Proveedor.ToLower().Contains(texto) || g.NumeroComprobante.ToLower().Contains(texto));
+            }
+
+            var coinciden = (await consulta.ToListAsync()).Where(g => FiltroListado.EnRango(FechaOrden(g.Fecha), desde, hasta))
+                .OrderByDescending(g => FechaOrden(g.Fecha)).ThenByDescending(g => g.Id).ToList();
+            var pagina = Paginacion.Paginar(coinciden, filtro.Pagina, filtro.Tamano);
+
             var partidas = await _context.Partidas.Where(p => p.ObraId == obraId).OrderBy(p => p.Id).ToListAsync();
             var consumos = await Consumos(obraId);
             return Ok(new
             {
-                gastos = gastos.OrderByDescending(g => FechaOrden(g.Fecha)).ThenByDescending(g => g.Id).Select(ProyectarGasto),
+                gastos = pagina.Items.Select(ProyectarGasto),
+                paginacion = pagina.Info,
+                resumen = new { cantidad = coinciden.Count, montoVigente = coinciden.Where(g => g.Estado != "Anulado").Sum(g => g.Monto) },
                 partidas = partidas.Select(p => new
                 {
                     id = p.Id,
@@ -945,7 +964,7 @@ namespace MymContratistas.Api.Controllers
         // Los pagos anteriores a HU18 guardaban la constancia con su nombre original en Uploads
         public static string RutaConstancia(Pago p) => string.IsNullOrEmpty(p.Archivo)
             ? Path.Combine(Directory.GetCurrentDirectory(), "Uploads", Path.GetFileName(p.ConstanciaUrl ?? string.Empty))
-            : Path.Combine(CarpetaPagos(), p.Archivo);
+            : RutasSeguras.Archivo(CarpetaPagos(), p.Archivo);
 
         private static object ProyectarPago(Pago p) => new
         {
@@ -967,17 +986,32 @@ namespace MymContratistas.Api.Controllers
 
         // GET: api/obras/{obraId}/pagos  (del más reciente al más antiguo, con la cuadrilla activa y el saldo de mano de obra)
         [HttpGet("{obraId}/pagos")]
-        public async Task<IActionResult> ListarPagos(int obraId)
+        public async Task<IActionResult> ListarPagos(int obraId, [FromQuery] FiltroListado? filtro = null)
         {
+            filtro ??= new FiltroListado();
             if (!await _context.Obras.AnyAsync(o => o.Id == obraId)) return NotFound("La obra no existe.");
+            var errorFiltro = filtro.Validar(out var desde, out var hasta);
+            if (errorFiltro != null) return BadRequest(errorFiltro);
 
-            var pagos = await _context.Pagos.Where(p => p.ObraId == obraId).ToListAsync();
+            var consulta = _context.Pagos.Where(p => p.ObraId == obraId);
+            if (filtro.EstadoElegido != null) consulta = consulta.Where(p => p.Estado == filtro.EstadoElegido);
+            if (filtro.Texto != null)
+            {
+                var texto = filtro.Texto;
+                consulta = consulta.Where(p => p.ColaboradorNombre.ToLower().Contains(texto) || p.Periodo.ToLower().Contains(texto));
+            }
+            var coinciden = (await consulta.ToListAsync()).Where(p => FiltroListado.EnRango(FechaOrden(p.FechaPago), desde, hasta))
+                .OrderByDescending(p => FechaOrden(p.FechaPago)).ThenByDescending(p => p.Id).ToList();
+            var pagina = Paginacion.Paginar(coinciden, filtro.Pagina, filtro.Tamano);
+
             var cuadrilla = await _context.Cuadrilla.Where(c => c.ObraId == obraId && c.FechaSalida == null).OrderBy(c => c.NombreCompleto).ToListAsync();
             var partidas = await _context.Partidas.Where(p => p.ObraId == obraId).ToListAsync();
             var manoDeObra = partidas.FirstOrDefault(EsManoDeObra);
             return Ok(new
             {
-                pagos = pagos.OrderByDescending(p => FechaOrden(p.FechaPago)).ThenByDescending(p => p.Id).Select(ProyectarPago),
+                pagos = pagina.Items.Select(ProyectarPago),
+                paginacion = pagina.Info,
+                resumen = new { cantidad = coinciden.Count, montoVigente = coinciden.Where(p => p.Estado != "Anulado").Sum(p => p.Monto) },
                 colaboradores = cuadrilla.Select(c => new { id = c.Id, nombreCompleto = c.NombreCompleto, especialidad = c.Especialidad, jornal = c.Jornal }),
                 partida = manoDeObra == null ? null : new { nombre = manoDeObra.Nombre, saldo = Saldo(manoDeObra, await Consumos(obraId)) }
             });

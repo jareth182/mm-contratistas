@@ -27,7 +27,7 @@ namespace MymContratistas.Api.Tests
         public HitosTests()
         {
             var invitacion = new InvitacionService(new SinCorreo(), new ConfigurationBuilder().Build(), NullLogger<InvitacionService>.Instance);
-            _obras = new ObrasController(Db, new PasswordHasher<Usuario>(), invitacion, new NotificacionHitoService(new SinCorreo(), NullLogger<NotificacionHitoService>.Instance));
+            _obras = new ObrasController(Db, new PasswordHasher<Usuario>(), invitacion, Notificaciones.Con(Db, new SinCorreo()));
             var obra = new Obra { Nombre = "Los Cedros", Cliente = "Inversiones Del Río" };
             Db.Obras.Add(obra);
             Db.SaveChanges();
@@ -158,7 +158,7 @@ namespace MymContratistas.Api.Tests
             var (_, hito) = await Agregar("Excavación", 10);
             await _obras.EditarHito(hito!.Id, Dto("Excavación y nivelación", 15));
 
-            var panel = new ClienteController(Db, Notificaciones.Silenciosa())
+            var panel = new ClienteController(Db, Notificaciones.Silenciosa(Db))
             {
                 ControllerContext = new ControllerContext
                 {

@@ -53,9 +53,12 @@ namespace MymContratistas.Api.Tests
     {
         public List<(string Para, string Asunto, string Cuerpo)> Enviados { get; } = new();
         public HashSet<string> Falla { get; } = new(StringComparer.OrdinalIgnoreCase);
+        // Se ejecuta justo antes de cada envío (permite simular qué pasa en otro proceso mientras se envía)
+        public Action? AntesDeEnviar { get; set; }
 
         public Task EnviarAsync(string destinatario, string asunto, string cuerpoHtml, IReadOnlyList<AdjuntoCorreo>? adjuntos = null)
         {
+            AntesDeEnviar?.Invoke();
             if (Falla.Contains(destinatario)) throw new InvalidOperationException("SMTP no disponible");
             Enviados.Add((destinatario, asunto, cuerpoHtml));
             return Task.CompletedTask;
@@ -64,9 +67,11 @@ namespace MymContratistas.Api.Tests
 
     public static class Notificaciones
     {
-        public static NotificacionHitoService Con(IEmailService correo) =>
-            new(correo, NullLogger<NotificacionHitoService>.Instance);
-        public static NotificacionHitoService Silenciosa() => Con(new CorreoDePrueba());
+        public static NotificacionService Nucleo(ApplicationDbContext db, IEmailService correo) =>
+            new(db, correo, NullLogger<NotificacionService>.Instance);
+        public static NotificacionHitoService Con(ApplicationDbContext db, IEmailService correo) =>
+            new(Nucleo(db, correo), db, NullLogger<NotificacionHitoService>.Instance);
+        public static NotificacionHitoService Silenciosa(ApplicationDbContext db) => Con(db, new CorreoDePrueba());
     }
 
     public static class Respuesta

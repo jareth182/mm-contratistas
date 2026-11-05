@@ -78,7 +78,7 @@ namespace MymContratistas.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("HitoId");
+                    b.HasIndex("HitoId", "Fecha");
 
                     b.ToTable("AvancesHito");
                 });
@@ -201,7 +201,7 @@ namespace MymContratistas.Api.Migrations
 
                     b.HasIndex("ComentarioPadreId");
 
-                    b.HasIndex("HitoId");
+                    b.HasIndex("HitoId", "Fecha");
 
                     b.ToTable("ComentariosHito");
                 });
@@ -354,7 +354,9 @@ namespace MymContratistas.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ObraId");
+                    b.HasIndex("ObraId", "Estado");
+
+                    b.HasIndex("ObraId", "PartidaNombre");
 
                     b.ToTable("Gastos");
                 });
@@ -401,7 +403,7 @@ namespace MymContratistas.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ObraId");
+                    b.HasIndex("ObraId", "Orden");
 
                     b.ToTable("Hitos");
                 });
@@ -433,6 +435,80 @@ namespace MymContratistas.Api.Migrations
                     b.HasIndex("ProyectoPortafolioId");
 
                     b.ToTable("ImagenesPortafolio");
+                });
+
+            modelBuilder.Entity("MymContratistas.Api.Models.Notificacion", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Canal")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ClaveDeduplicacion")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Destinatario")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("EnviadoEn")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Error")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("Fecha")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("HitoId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Intentos")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("Leida")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("LeidaEn")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Mensaje")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int?>("ObraId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Titulo")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int?>("UsuarioId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClaveDeduplicacion")
+                        .IsUnique();
+
+                    b.HasIndex("Estado", "Fecha");
+
+                    b.HasIndex("UsuarioId", "Canal", "Leida", "Fecha");
+
+                    b.ToTable("Notificaciones");
                 });
 
             modelBuilder.Entity("MymContratistas.Api.Models.Obra", b =>
@@ -537,7 +613,9 @@ namespace MymContratistas.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ObraId");
+                    b.HasIndex("ObraId", "Estado");
+
+                    b.HasIndex("ObraId", "PartidaNombre");
 
                     b.ToTable("Pagos");
                 });

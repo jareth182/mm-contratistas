@@ -4,18 +4,41 @@ ST.perfil = ST.usuario ? (ST.usuario.rol === 'Cliente' ? 'cli' : 'adm') : 'pub';
 
 /* ================= control ================= */
 function go(v){ST.formUsuario=null;ST.formTrabajador=null;ST.formServicio=null;ST.formHito=null;ST.formProyecto=null;ST.formObra=null;ST.finalizando=false;ST.v=v;ST.msg=null;ST.menu=null;ST.nav=false;draw();window.scrollTo({top:0})}
-function abrirObra(id){ST.obraId=id;ST.formHito=null;ST.hitoEditando=null;ST.registrandoAvance=false;ST.formAvance=null;ST.partidaEditando=null;ST.partidaDetalle=null;ST.tab='hitos';go('obra')}
+function abrirObra(id){ST.obraId=id;ST.fGastos=null;ST.fPagos=null;ST.formHito=null;ST.hitoEditando=null;ST.registrandoAvance=false;ST.formAvance=null;ST.partidaEditando=null;ST.partidaDetalle=null;ST.tab='hitos';go('obra')}
 // Seguimiento de obra del cliente (HU20)
 function abrirSeguimiento(id){ST.obraCliId=id;ST.hitoCliId=null;ST.avisoComentario=null;go('c-seg')}
 function verDetalleHitoCliente(id){
   ST.hitoCliId=ST.hitoCliId===id?null:id;ST.msg=null;ST.avisoComentario=null;
   draw().then(()=>{const d=document.getElementById('detalle_hito_cli');if(d)d.scrollIntoView({block:'start'})});
 }
+// Filtros y paginación de los listados (HT-07): un estado por listado ('fGastos', 'fPagos', 'fGastosCli')
+const FILTRO_VACIO = () => ({ pagina: 1, estado: '', partida: '', q: '', desde: '', hasta: '' });
+function filtroDe(clave) { return ST[clave] || (ST[clave] = FILTRO_VACIO()); }
+function hayFiltros(clave) { const f = filtroDe(clave); return !!(f.estado || f.partida || f.q || f.desde || f.hasta); }
+function consultaLista(clave) {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(filtroDe(clave))) if (v !== '' && v != null) p.set(k, v);
+  return p.toString();
+}
+function aplicarFiltroLista(clave) {
+  const f = filtroDe(clave);
+  for (const campo of ['q', 'estado', 'partida', 'desde', 'hasta']) {
+    const el = document.getElementById(`${clave}_${campo}`);
+    if (el) f[campo] = el.value.trim();
+  }
+  f.pagina = 1;
+  ST.msg = null;
+  draw();
+}
+function limpiarFiltroLista(clave) { ST[clave] = FILTRO_VACIO(); ST.msg = null; draw(); }
+function irPaginaLista(clave, n) { filtroDe(clave).pagina = n; draw(); }
+
 // Gastos del cliente (HU21)
-function abrirGastos(id){ST.obraCliId=id;ST.partidaCli=null;go('c-gastos')}
+function abrirGastos(id){ST.obraCliId=id;ST.fGastosCli=null;go('c-gastos')}
 function seleccionarPartidaCliente(i){
-  ST.partidaCli=i>=0&&ST.partidaCli!==ST.partidasCli[i]?ST.partidasCli[i]:null;
-  ST.msg=null;draw();
+  const f=filtroDe('fGastosCli');
+  f.partida=i>=0&&f.partida!==ST.partidasCli[i]?ST.partidasCli[i]:'';
+  f.pagina=1;ST.msg=null;draw();
 }
 
 // Visor ampliado del comprobante: se pide con el token y se muestra sin salir de la página
@@ -84,9 +107,50 @@ async function cargarAlertasDocumentales() {
   }
 }
 
+// Avisos de la aplicación del usuario (HT-05): los últimos 5 y cuántos no ha leído
+async function cargarAvisos() {
+  if (!ST.usuario) { ST.avisos = null; return; }
+  try {
+    const r = await apiFetch(`${API}/api/notificaciones?tamano=5`);
+    ST.avisos = r.ok ? await r.json() : null;
+  } catch (e) {
+    ST.avisos = null;
+  }
+}
+
+async function marcarAvisosLeidos(e) {
+  if (e) e.stopPropagation();
+  try { await apiFetch(`${API}/api/notificaciones/leidas`, { method: 'PUT' }); } catch (x) { /* se reintenta al volver a abrir */ }
+  draw();
+}
+
+// Abre el aviso: lo marca como leído y lleva al hito o a la pantalla a la que se refiere
+async function abrirAviso(id) {
+  const aviso = ((ST.avisos || {}).items || []).find(x => x.id === id);
+  if (!aviso) return;
+  try { await apiFetch(`${API}/api/notificaciones/${id}/leida`, { method: 'PUT' }); } catch (e) { /* no impide navegar */ }
+
+  if (ST.usuario.rol === 'Cliente') {
+    if (!aviso.obraId) return draw();
+    ST.obraCliId = aviso.obraId;
+    ST.hitoCliId = aviso.hitoId || null;
+    ST.avisoComentario = null;
+    return go('c-seg');
+  }
+  if (!aviso.obraId) return go(aviso.tipo === 'AlertaDocumental' ? 'alertas' : 'tablero');
+  ST.obraId = aviso.obraId;
+  ST.hitoEditando = aviso.hitoId || null;
+  ST.registrandoAvance = false;
+  ST.formAvance = null;
+  ST.respondiendoA = null;
+  ST.avisoRespuesta = null;
+  ST.tab = 'hitos';
+  go('obra');
+}
+
 async function draw(){
   guardarAcceso();
-  await cargarAlertasDocumentales();
+  await Promise.all([cargarAlertasDocumentales(), cargarAvisos()]);
   const vista = V[ST.v] || V.home;
   document.getElementById('app').innerHTML = await vista();
   location.hash = ST.v === 'obra-pub' && ST.proyectoPubId ? `obra-pub?id=${ST.proyectoPubId}`

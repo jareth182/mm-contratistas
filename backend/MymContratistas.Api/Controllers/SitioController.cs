@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MymContratistas.Api.Data;
 using MymContratistas.Api.Models;
+using MymContratistas.Api.Services;
 
 namespace MymContratistas.Api.Controllers
 {
@@ -114,7 +115,7 @@ namespace MymContratistas.Api.Controllers
                 .FirstOrDefaultAsync(i => i.Id == id && i.Proyecto!.Estado == ProyectoPortafolio.Publicado);
             if (imagen == null) return NotFound();
 
-            var ruta = Path.Combine(Directory.GetCurrentDirectory(), "Uploads", "portafolio", imagen.Archivo);
+            var ruta = RutasSeguras.Archivo(Path.Combine(Directory.GetCurrentDirectory(), "Uploads", "portafolio"), imagen.Archivo);
             if (!System.IO.File.Exists(ruta)) return NotFound();
 
             var tipo = Path.GetExtension(imagen.Archivo) == ".png" ? "image/png" : "image/jpeg";

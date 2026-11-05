@@ -1,68 +1,89 @@
 using System.Net;
+using Microsoft.EntityFrameworkCore;
+using MymContratistas.Api.Data;
 using MymContratistas.Api.Models;
 
 namespace MymContratistas.Api.Services
 {
-    // Avisos por correo sobre los hitos de una obra: hito completado (HU13) y comentarios del cliente (HU22)
+    // Avisos del seguimiento de obra y del control documental: hito completado (HU13), comentarios (HU22) y
+    // documentación por vencer (HU24). Cada aviso se envía por correo y, si el destinatario tiene cuenta, también
+    // queda en su campana; todo pasa por NotificacionService, que lo registra y evita duplicados (HT-05).
     public class NotificacionHitoService
     {
-        private readonly IEmailService _email;
+        private const int LargoMensajeApp = 140;
+
+        private readonly NotificacionService _notificaciones;
+        private readonly ApplicationDbContext _context;
         private readonly ILogger<NotificacionHitoService> _logger;
 
-        public NotificacionHitoService(IEmailService email, ILogger<NotificacionHitoService> logger)
+        public NotificacionHitoService(NotificacionService notificaciones, ApplicationDbContext context, ILogger<NotificacionHitoService> logger)
         {
-            _email = email;
+            _notificaciones = notificaciones;
+            _context = context;
             _logger = logger;
         }
 
+        private static string Resumir(string texto) =>
+            texto.Length <= LargoMensajeApp ? texto : texto[..(LargoMensajeApp - 1)].TrimEnd() + "…";
+
         // Devuelve false si el correo no pudo enviarse; registrar el avance nunca depende de este envío
-        public async Task<bool> HitoCompletadoAsync(Obra obra, Hito hito, string correoCliente)
+        public async Task<bool> HitoCompletadoAsync(Obra obra, Hito hito, string? correoCliente)
         {
-            try
+            var clave = $"hito:{hito.Id}";
+            if (obra.ClienteId != null)
             {
-                await _email.EnviarAsync(correoCliente, $"Hito completado en su obra «{obra.Nombre}»", Cuerpo(obra, hito));
-                return true;
+                var cuentas = await _context.Usuarios.Where(u => u.ClienteId == obra.ClienteId && u.Estado == "Activo").Select(u => new { u.Id, u.Correo }).ToListAsync();
+                foreach (var cuenta in cuentas)
+                    await _notificaciones.AvisarEnAppAsync(new SolicitudNotificacion(Notificacion.TipoHitoCompletado,
+                        $"Hito completado: {hito.Nombre}", $"{obra.Nombre} · avance de la obra {obra.AvancePorcentaje}%", obra.Id, hito.Id, clave), cuenta.Id, cuenta.Correo);
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "No se pudo notificar el hito {Hito} de la obra {Obra} a {Correo}", hito.Nombre, obra.Nombre, correoCliente);
-                return false;
-            }
+
+            var resultado = await _notificaciones.EnviarCorreoAsync(new SolicitudNotificacion(Notificacion.TipoHitoCompletado,
+                $"Hito completado en su obra «{obra.Nombre}»", null, obra.Id, hito.Id, clave), correoCliente, null, Cuerpo(obra, hito));
+            return ResultadoNotificacion.Entregado(resultado);
         }
 
         // HU22: avisa a los destinatarios (Gerente de Operaciones) del comentario nuevo de un cliente.
-        // Cada envío es independiente; devuelve true solo si hubo destinatarios y a todos les llegó.
-        public async Task<bool> ComentarioDelClienteAsync(Obra obra, Hito hito, ComentarioHito comentario, IReadOnlyCollection<string> destinatarios)
+        // Cada envío es independiente; devuelve true solo si hubo correos y a todos les llegó.
+        public async Task<bool> ComentarioDelClienteAsync(Obra obra, Hito hito, ComentarioHito comentario, IReadOnlyCollection<DestinatarioNotificacion> destinatarios)
         {
             if (destinatarios.Count == 0)
             {
                 _logger.LogWarning("El comentario {Comentario} del hito {Hito} no tiene a quién notificar: no hay un Gerente de Operaciones activo", comentario.Id, hito.Nombre);
                 return false;
             }
-            var asunto = $"Nuevo comentario del cliente en «{hito.Nombre}» · {obra.Nombre}";
+            var clave = $"comentario:{comentario.Id}";
             var cuerpo = CuerpoComentario("Nuevo comentario de un cliente",
                 $"<b>{WebUtility.HtmlEncode(comentario.AutorNombre)}</b> comentó en el hito <b>{WebUtility.HtmlEncode(hito.Nombre)}</b> de la obra <b>{WebUtility.HtmlEncode(obra.Nombre)}</b>:",
                 comentario, "Ingrese al panel de administración, en el detalle del hito, para responder.");
-            return await EnviarATodosAsync(destinatarios, asunto, cuerpo, $"comentario {comentario.Id} del hito {hito.Nombre}");
+            var app = new SolicitudNotificacion(Notificacion.TipoComentarioCliente, $"Nuevo comentario de {comentario.AutorNombre}",
+                $"{hito.Nombre} · {obra.Nombre}: {Resumir(comentario.Texto)}", obra.Id, hito.Id, clave);
+            var correo = new SolicitudNotificacion(Notificacion.TipoComentarioCliente, $"Nuevo comentario del cliente en «{hito.Nombre}» · {obra.Nombre}", null, obra.Id, hito.Id, clave);
+            return await AvisarATodosAsync(destinatarios, app, correo, cuerpo);
         }
 
         // HU22: avisa al cliente que el equipo respondió su comentario
-        public async Task<bool> RespuestaAlClienteAsync(Obra obra, Hito hito, ComentarioHito respuesta, string correoCliente)
+        public async Task<bool> RespuestaAlClienteAsync(Obra obra, Hito hito, ComentarioHito respuesta, DestinatarioNotificacion cliente)
         {
-            var asunto = $"Respondimos su comentario en «{hito.Nombre}» · {obra.Nombre}";
+            var clave = $"respuesta:{respuesta.Id}";
             var cuerpo = CuerpoComentario("Respuesta a su comentario",
                 $"<b>{WebUtility.HtmlEncode(respuesta.AutorNombre)}</b> de M/M Contratistas respondió su comentario en el hito <b>{WebUtility.HtmlEncode(hito.Nombre)}</b> de la obra <b>{WebUtility.HtmlEncode(obra.Nombre)}</b>:",
                 respuesta, "Ingrese a su panel de seguimiento, en el detalle del hito, para ver la conversación.");
-            return await EnviarATodosAsync(new[] { correoCliente }, asunto, cuerpo, $"respuesta {respuesta.Id} del hito {hito.Nombre}");
+            var app = new SolicitudNotificacion(Notificacion.TipoRespuestaPersonal, "El equipo respondió su comentario",
+                $"{hito.Nombre} · {obra.Nombre}: {Resumir(respuesta.Texto)}", obra.Id, hito.Id, clave);
+            var correo = new SolicitudNotificacion(Notificacion.TipoRespuestaPersonal, $"Respondimos su comentario en «{hito.Nombre}» · {obra.Nombre}", null, obra.Id, hito.Id, clave);
+            return await AvisarATodosAsync(new[] { cliente }, app, correo, cuerpo);
         }
 
         // HU24: resumen diario de documentación vencida o por vencer para el Gerente de Operaciones.
-        // Devuelve cuántos destinatarios lo recibieron; un fallo con uno no impide el envío a los demás.
-        public async Task<int> AlertasDocumentalesAsync(IReadOnlyCollection<string> destinatarios, IReadOnlyList<AlertaDocumental> alertas, DateOnly hoy)
+        // Devuelve a cuántos destinatarios les quedó entregado el correo (en este envío o en uno anterior del mismo día);
+        // un fallo con uno no impide el envío a los demás.
+        public async Task<int> AlertasDocumentalesAsync(IReadOnlyCollection<DestinatarioNotificacion> destinatarios, IReadOnlyList<AlertaDocumental> alertas, DateOnly hoy)
         {
             var vencidos = alertas.Count(a => a.Estado == "Vencido");
             var porVencer = alertas.Count - vencidos;
-            var asunto = $"Documentación del personal al {hoy:dd/MM/yyyy}: {vencidos} vencido{(vencidos == 1 ? "" : "s")}, {porVencer} por vencer";
+            var resumen = $"{vencidos} vencido{(vencidos == 1 ? "" : "s")}, {porVencer} por vencer";
+            var clave = $"alertas:{hoy:yyyy-MM-dd}";
             var filas = string.Concat(alertas.Select(a => $@"<tr>
                     <td style='padding:6px 10px;border-bottom:1px solid #ddd'>{WebUtility.HtmlEncode(a.Colaborador)}</td>
                     <td style='padding:6px 10px;border-bottom:1px solid #ddd'>{WebUtility.HtmlEncode(a.Documento)}</td>
@@ -79,45 +100,32 @@ namespace MymContratistas.Api.Services
                 </table>
                 <p>Un colaborador con documentación vencida no puede asignarse a una cuadrilla. Ingrese al panel de administración, en Personal, para registrar las renovaciones.</p>
             </div>";
+            var app = new SolicitudNotificacion(Notificacion.TipoAlertaDocumental, "Documentación del personal", $"{resumen}. Revise las alertas para registrar las renovaciones.", null, null, clave);
+            var correo = new SolicitudNotificacion(Notificacion.TipoAlertaDocumental, $"Documentación del personal al {hoy:dd/MM/yyyy}: {resumen}", null, null, null, clave);
 
-            var enviados = 0;
-            foreach (var correo in destinatarios)
+            var entregados = 0;
+            foreach (var d in destinatarios)
             {
-                try
-                {
-                    await _email.EnviarAsync(correo, asunto, cuerpo);
-                    enviados++;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "No se pudo enviar el aviso de documentación del personal a {Correo}", correo);
-                }
+                if (d.UsuarioId != null) await _notificaciones.AvisarEnAppAsync(app, d.UsuarioId.Value, d.Correo);
+                if (ResultadoNotificacion.Entregado(await _notificaciones.EnviarCorreoAsync(correo, d.Correo, d.UsuarioId, cuerpo))) entregados++;
             }
-            return enviados;
+            return entregados;
         }
 
-        private async Task<bool> EnviarATodosAsync(IEnumerable<string> destinatarios, string asunto, string cuerpo, string detalle)
+        // Aviso en la app y correo para cada destinatario; true si hubo al menos un correo entregado y ninguno falló
+        private async Task<bool> AvisarATodosAsync(IReadOnlyCollection<DestinatarioNotificacion> destinatarios, SolicitudNotificacion app, SolicitudNotificacion correo, string cuerpoHtml)
         {
-            var todosEnviados = true;
-            foreach (var correo in destinatarios)
+            var entregados = 0;
+            var fallidos = 0;
+            foreach (var d in destinatarios)
             {
-                try { await _email.EnviarAsync(correo, asunto, cuerpo); }
-                catch (Exception ex)
-                {
-                    todosEnviados = false;
-                    _logger.LogError(ex, "No se pudo notificar el {Detalle} a {Correo}", detalle, correo);
-                }
+                if (d.UsuarioId != null) await _notificaciones.AvisarEnAppAsync(app, d.UsuarioId.Value, d.Correo);
+                var resultado = await _notificaciones.EnviarCorreoAsync(correo, d.Correo, d.UsuarioId, cuerpoHtml);
+                if (ResultadoNotificacion.Entregado(resultado)) entregados++;
+                else if (resultado == ResultadoNotificacion.Fallido) fallidos++;
             }
-            return todosEnviados;
+            return entregados > 0 && fallidos == 0;
         }
-
-        private static string CuerpoComentario(string titulo, string presentacion, ComentarioHito comentario, string cierre) => $@"
-            <div style='font-family: Arial, sans-serif; padding: 20px; color: #333;'>
-                <h2>{titulo}</h2>
-                <p>{presentacion}</p>
-                <blockquote style='margin: 12px 0; padding: 8px 14px; border-left: 4px solid #F2A900; background: #F5F7F8;'>{WebUtility.HtmlEncode(comentario.Texto).ReplaceLineEndings("<br>")}</blockquote>
-                <p>{cierre}</p>
-            </div>";
 
         private static string Cuerpo(Obra obra, Hito hito) => $@"
             <div style='font-family: Arial, sans-serif; padding: 20px; color: #333;'>
@@ -125,6 +133,14 @@ namespace MymContratistas.Api.Services
                 <p>Se completó el hito <b>{WebUtility.HtmlEncode(hito.Nombre)}</b> de la obra <b>{WebUtility.HtmlEncode(obra.Nombre)}</b>.</p>
                 <p>Fecha de término: {hito.FechaReal:dd/MM/yyyy}<br>Avance total de la obra: {obra.AvancePorcentaje}%</p>
                 <p>Ingrese a su panel de seguimiento para ver las fotografías y el detalle del avance.</p>
+            </div>";
+
+        private static string CuerpoComentario(string titulo, string presentacion, ComentarioHito comentario, string cierre) => $@"
+            <div style='font-family: Arial, sans-serif; padding: 20px; color: #333;'>
+                <h2>{titulo}</h2>
+                <p>{presentacion}</p>
+                <blockquote style='margin: 12px 0; padding: 8px 14px; border-left: 4px solid #F2A900; background: #F5F7F8;'>{WebUtility.HtmlEncode(comentario.Texto).ReplaceLineEndings("<br>")}</blockquote>
+                <p>{cierre}</p>
             </div>";
     }
 }

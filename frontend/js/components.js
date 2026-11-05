@@ -27,7 +27,7 @@ function navbar(){
     const on=v=>ST.v===v?'on':'';
     links=`<button class="${on('c-obra')||on('c-seg')}" onclick="go('c-obra')">Mis proyectos</button>
       <button class="${on('c-gastos')}" onclick="go('c-gastos')">Gastos</button>`;
-    user=userMenu(iniciales(ST.usuario.nombreCompleto),ST.usuario.nombreCompleto,ST.usuario.rol,false);
+    user=userMenu(iniciales(ST.usuario.nombreCompleto),ST.usuario.nombreCompleto,ST.usuario.rol,true);
   }
   return `<header class="nav"><div class="nav-in">
     <a class="brand" onclick="go('${P==='pub'?'home':vistaInicio(ST.usuario.rol)}')" style="cursor:pointer">
@@ -51,17 +51,29 @@ function textoAlerta(a){
     :`${a.documento} vence en ${d} día${d===1?'':'s'}`;
 }
 
+// Campana de la barra superior (HT-05 y HU24): avisos de la aplicación para todos los usuarios y, solo para el
+// personal, las alertas de documentación vencida o por vencer
 function campanaAlertas(){
-  const r=ST.alertas;
-  const total=r?r.resumen.total:0;
+  const esCliente=ST.usuario&&ST.usuario.rol==='Cliente';
+  const r=esCliente?null:ST.alertas;
+  const alertas=r?r.resumen.total:0;
   const lista=r?r.alertas.slice(0,5):[];
-  return `<span class="ddwrap"><button class="iconbtn" onclick="tog('alr',event)" title="Documentación del personal">🔔${total?`<span class="badge">${total}</span>`:''}</button>
-    ${ST.menu==='alr'?`<div class="dd" style="min-width:310px">
-      <div class="dh"><span>Documentación del personal</span><b style="color:${total?'var(--rust)':'var(--concrete)'}">${total}</b></div>
+  const av=ST.avisos;
+  const noLeidas=av?av.noLeidas:0;
+  const total=alertas+noLeidas;
+  const seccionAvisos=`<div class="dh"><span>Avisos</span>${noLeidas?`<button class="btn link" onclick="marcarAvisosLeidos(event)">Marcar todos como leídos</button>`:`<b style="color:var(--concrete)">0</b>`}</div>
+      ${av?(av.items.length?av.items.map(a=>`<button class="item" onclick="abrirAviso(${a.id})" style="${a.leida?'':'background:#FDFAF1'}">
+        <span style="${a.leida?'':'font-weight:700'}">${esc(a.titulo)}</span>
+        <span class="sub">${esc(a.mensaje)}</span><span class="sub" style="font-size:11.5px">${fmtFechaHora(a.fecha)}</span></button>`).join('')
+        :'<div class="item" style="cursor:default">No tiene avisos.</div>')
+        :'<div class="item" style="cursor:default">No se pudieron cargar los avisos.</div>'}`;
+  const seccionDocumentos=esCliente?'':`<div class="dh"><span>Documentación del personal</span><b style="color:${alertas?'var(--rust)':'var(--concrete)'}">${alertas}</b></div>
       ${lista.map(a=>`<button class="item" onclick="abrirDocumentacion(${a.trabajadorId})">${esc(a.colaborador)}<span class="sub"><span class="tg ${a.estado==='Vencido'?'bd':'wn'}" style="font-size:11.5px">${esc(textoAlerta(a))}</span></span></button>`).join('')
         ||`<div class="item" style="cursor:default">${r?'Toda la documentación está vigente.':'No se pudieron cargar las alertas.'}</div>`}
-      ${total>lista.length?`<div class="item" style="cursor:default;color:var(--concrete)">y ${total-lista.length} más…</div>`:''}
-      <button class="item" onclick="go('alertas')" style="text-align:center;font-family:var(--h)">Ver todas las alertas</button></div>`:''}</span>`;
+      ${alertas>lista.length?`<div class="item" style="cursor:default;color:var(--concrete)">y ${alertas-lista.length} más…</div>`:''}
+      <button class="item" onclick="go('alertas')" style="text-align:center;font-family:var(--h)">Ver todas las alertas</button>`;
+  return `<span class="ddwrap"><button class="iconbtn" onclick="tog('alr',event)" title="Avisos">🔔${total?`<span class="badge">${total}</span>`:''}</button>
+    ${ST.menu==='alr'?`<div class="dd" style="min-width:330px;max-height:80vh;overflow:auto">${seccionAvisos}${seccionDocumentos}</div>`:''}</span>`;
 }
 
 function userMenu(ini,nom,rol,alert){
@@ -134,4 +146,34 @@ function hiloComentarios(comentarios, acciones) {
       ${respuestas.map(x => burbuja(x, ' style="margin-left:18px"')).join('')}
       ${acciones ? acciones(r, respuestas.length) : ''}</div>`;
   }).join('');
+}
+
+// Paginador de un listado (HT-07): «info» es el objeto «paginacion» que devuelve la API
+function pagerHtml(info, clave) {
+  if (!info) return '';
+  const desde = info.total === 0 ? 0 : (info.pagina - 1) * info.tamano + 1;
+  const hasta = Math.min(info.total, info.pagina * info.tamano);
+  const boton = (n, texto, activo) => `<button class="btn ghost sm" ${activo ? `onclick="irPaginaLista('${clave}',${n})"` : 'disabled'}>${texto}</button>`;
+  return `<div style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:10px 14px;border-top:1px solid var(--line-2)">
+    <span class="hint">${info.total ? `Mostrando ${desde}–${hasta} de ${info.total}` : 'Sin resultados'}</span>
+    <span style="display:flex;gap:8px;align-items:center">${boton(info.pagina - 1, '‹ Anterior', info.pagina > 1)}
+      <span class="hint">Página ${info.pagina} de ${info.totalPaginas}</span>${boton(info.pagina + 1, 'Siguiente ›', info.pagina < info.totalPaginas)}</span></div>`;
+}
+
+// Barra de filtros de un listado: texto, estado y partida opcionales, y rango de fechas
+function filtrosHtml(clave, { estado = false, partidas = null, buscar = 'Concepto o proveedor' } = {}) {
+  const f = filtroDe(clave);
+  const campo = 'padding:6px 10px;border:1px solid var(--line);font-family:var(--b)';
+  const enter = `onkeydown="if(event.key==='Enter')aplicarFiltroLista('${clave}')"`;
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;padding:12px 14px;border-bottom:1px solid var(--line-2)">
+    <div class="f" style="margin:0"><label for="${clave}_q">Buscar</label><input id="${clave}_q" value="${esc(f.q)}" maxlength="100" placeholder="${esc(buscar)}" style="${campo}" ${enter}></div>
+    ${estado ? `<div class="f" style="margin:0"><label for="${clave}_estado">Estado</label><select id="${clave}_estado" style="${campo}">
+      <option value="">Todos</option><option ${f.estado === 'Registrado' ? 'selected' : ''}>Registrado</option><option ${f.estado === 'Anulado' ? 'selected' : ''}>Anulado</option></select></div>` : ''}
+    ${partidas ? `<div class="f" style="margin:0"><label for="${clave}_partida">Partida</label><select id="${clave}_partida" style="${campo}">
+      <option value="">Todas</option>${partidas.map(p => `<option ${f.partida === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></div>` : ''}
+    <div class="f" style="margin:0"><label for="${clave}_desde">Desde</label><input id="${clave}_desde" type="date" value="${esc(f.desde)}" style="${campo}"></div>
+    <div class="f" style="margin:0"><label for="${clave}_hasta">Hasta</label><input id="${clave}_hasta" type="date" value="${esc(f.hasta)}" style="${campo}"></div>
+    <button class="btn sm" onclick="aplicarFiltroLista('${clave}')">Filtrar</button>
+    ${hayFiltros(clave) ? `<button class="btn ghost sm" onclick="limpiarFiltroLista('${clave}')">Limpiar</button>` : ''}
+  </div>`;
 }

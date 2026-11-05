@@ -966,16 +966,26 @@ TC.pres = async () => {
 TC.gastos = async () => {
   let filas = '';
   let opcionesPartidas = '';
+  let nombresPartidas = [];
+  let paginacion = null;
+  let totalesTxt = '';
+  let errorFiltro = null;
 
   try {
-    const respuesta = await apiFetch(`${API}/api/obras/${ST.obraId}/gastos`);
-    if (!respuesta.ok) throw new Error();
+    const respuesta = await apiFetch(`${API}/api/obras/${ST.obraId}/gastos?${consultaLista('fGastos')}`);
+    if (!respuesta.ok) {
+      if (respuesta.status === 400) errorFiltro = await respuesta.text();
+      throw new Error();
+    }
     const datos = await respuesta.json();
     const gastos = datos.gastos || [];
     const partidas = datos.partidas || [];
+    nombresPartidas = partidas.map(p => p.nombre);
+    paginacion = datos.paginacion;
+    totalesTxt = `${datos.resumen.cantidad} gasto${datos.resumen.cantidad === 1 ? '' : 's'} · vigente ${S(datos.resumen.montoVigente)}`;
 
     if (gastos.length === 0) {
-      filas = `<tr><td colspan="7" style="text-align:center;color:var(--concrete)">No hay gastos registrados.</td></tr>`;
+      filas = `<tr><td colspan="7" style="text-align:center;color:var(--concrete)">${hayFiltros('fGastos') ? 'No hay gastos que coincidan con los filtros.' : 'No hay gastos registrados.'}</td></tr>`;
     } else {
       filas = gastos.map(g => `<tr style="${g.estado === 'Anulado' ? 'color:var(--concrete)' : ''}">
         <td>${esc(g.fecha)}</td><td>${esc(g.concepto)}</td><td>${esc(g.partidaNombre)}</td><td>${esc(g.proveedor)}</td>
@@ -997,18 +1007,19 @@ TC.gastos = async () => {
         `<option value="${esc(p.nombre)}">${esc(p.nombre)} — saldo ${S(p.saldo)}</option>`).join('');
     }
   } catch (error) {
-    filas = `<tr><td colspan="7" style="text-align:center;color:var(--rust)">Error al cargar los gastos desde el servidor.</td></tr>`;
+    filas = `<tr><td colspan="7" style="text-align:center;color:var(--rust)">${errorFiltro ? esc(errorFiltro) : 'Error al cargar los gastos desde el servidor.'}</td></tr>`;
     opcionesPartidas = '<option value="">No se pudieron cargar las partidas</option>';
   }
 
   const hoy = new Date();
   const hoyIso = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
 
-  return `<div class="card"><div class="ch"><span class="hint">Del más reciente al más antiguo</span>
+  return `<div class="card"><div class="ch"><span class="hint">Del más reciente al más antiguo${totalesTxt ? ' · ' + totalesTxt : ''}</span>
    <button class="btn sm" onclick="document.getElementById('form_gasto').scrollIntoView({behavior: 'smooth'})">Nuevo gasto</button></div>
-   <table><thead><tr><th>Fecha</th><th>Concepto</th><th>Partida</th><th>Proveedor</th><th class="num">Monto</th><th>Estado</th><th></th></tr></thead><tbody>
+   ${filtrosHtml('fGastos', { estado: true, partidas: nombresPartidas })}
+   <div style="overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Partida</th><th>Proveedor</th><th class="num">Monto</th><th>Estado</th><th></th></tr></thead><tbody>
    ${filas}
-   </tbody></table></div>
+   </tbody></table></div>${pagerHtml(paginacion, 'fGastos')}</div>
 
    <div id="form_gasto" class="card" style="margin-top:20px"><div class="ch"><h4>Nuevo gasto</h4>${ST.hu?'<span class="hu">HU17</span>':''}</div><div class="cb">
     <div class="g3"><div class="f"><label>Fecha</label><input id="gasto_fecha" type="date" value="${hoyIso}"></div>
@@ -1031,16 +1042,24 @@ TC.pagos = async () => {
   let filas = '';
   let opcionesColaboradores = '';
   let saldoTexto = '';
+  let paginacion = null;
+  let totalesTxt = '';
+  let errorFiltro = null;
 
   try {
-    const respuesta = await apiFetch(`${API}/api/obras/${ST.obraId}/pagos`);
-    if (!respuesta.ok) throw new Error();
+    const respuesta = await apiFetch(`${API}/api/obras/${ST.obraId}/pagos?${consultaLista('fPagos')}`);
+    if (!respuesta.ok) {
+      if (respuesta.status === 400) errorFiltro = await respuesta.text();
+      throw new Error();
+    }
     const datos = await respuesta.json();
     const pagos = datos.pagos || [];
     const colaboradores = datos.colaboradores || [];
+    paginacion = datos.paginacion;
+    totalesTxt = `${datos.resumen.cantidad} pago${datos.resumen.cantidad === 1 ? '' : 's'} · vigente ${S(datos.resumen.montoVigente)}`;
 
     if (pagos.length === 0) {
-      filas = `<tr><td colspan="6" style="text-align:center;color:var(--concrete)">No hay pagos registrados.</td></tr>`;
+      filas = `<tr><td colspan="6" style="text-align:center;color:var(--concrete)">${hayFiltros('fPagos') ? 'No hay pagos que coincidan con los filtros.' : 'No hay pagos registrados.'}</td></tr>`;
     } else {
       filas = pagos.map(p => `<tr style="${p.estado === 'Anulado' ? 'color:var(--concrete)' : ''}">
         <td><b>${esc(p.colaboradorNombre)}</b></td>
@@ -1068,18 +1087,19 @@ TC.pagos = async () => {
       ? `Saldo de la partida «${esc(datos.partida.nombre)}»: <b>${S(datos.partida.saldo)}</b>`
       : 'Registre la partida «Mano de obra» en Presupuesto para poder pagar al personal.';
   } catch (error) {
-    filas = `<tr><td colspan="6" style="text-align:center;color:var(--rust)">Error al cargar los pagos desde el servidor.</td></tr>`;
+    filas = `<tr><td colspan="6" style="text-align:center;color:var(--rust)">${errorFiltro ? esc(errorFiltro) : 'Error al cargar los pagos desde el servidor.'}</td></tr>`;
     opcionesColaboradores = '<option value="">No se pudo cargar la cuadrilla</option>';
   }
 
   const hoy = new Date();
   const hoyIso = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
 
-  return `<div class="card"><div class="ch"><span class="hint">Imputados a la partida Mano de obra · ${saldoTexto}</span>
+  return `<div class="card"><div class="ch"><span class="hint">Imputados a la partida Mano de obra · ${saldoTexto}${totalesTxt ? ' · ' + totalesTxt : ''}</span>
    <button class="btn sm" onclick="document.getElementById('form_pago').scrollIntoView({behavior: 'smooth'})">Nuevo pago</button></div>
-   <table><thead><tr><th>Colaborador</th><th>Periodo pagado</th><th class="num">Monto</th><th>Fecha de pago</th><th>Estado</th><th></th></tr></thead><tbody>
+   ${filtrosHtml('fPagos', { estado: true, buscar: 'Colaborador o periodo' })}
+   <div style="overflow-x:auto"><table><thead><tr><th>Colaborador</th><th>Periodo pagado</th><th class="num">Monto</th><th>Fecha de pago</th><th>Estado</th><th></th></tr></thead><tbody>
    ${filas}
-   </tbody></table></div>
+   </tbody></table></div>${pagerHtml(paginacion, 'fPagos')}</div>
    <p class="hint">Solo aparecen los colaboradores activos en la cuadrilla de esta obra. Los pagos anulados no cuentan en la partida.</p>
 
    <div id="form_pago" class="card" style="margin-top:20px"><div class="ch"><h4>Registrar nuevo pago</h4>${ST.hu?'<span class="hu">HU18</span>':''}</div><div class="cb">
@@ -1300,20 +1320,21 @@ V['c-gastos']=async()=>{
         </tbody></table></div>`,[['Mis proyectos','c-obra'],['Gastos']]);
   }
 
-  let datos=null,error=null;
+  let datos=null,error=null,errorFiltro=null;
   try{
-    const r=await apiFetch(`${API}/api/cliente/obras/${ST.obraCliId}/gastos`);
+    const r=await apiFetch(`${API}/api/cliente/obras/${ST.obraCliId}/gastos?${consultaLista('fGastosCli')}`);
     if(r.ok) datos=await r.json();
     else if(r.status===403){error=(await r.text())||'No tiene permisos para ver este proyecto.';ST.obraCliId=null}
+    else if(r.status===400){errorFiltro=await r.text();ST.fGastosCli=null;error=errorFiltro}
     else error='No se pudo cargar el detalle de gastos. Intente nuevamente.';
   }catch(e){error='Error de conexión con el servidor.'}
   if(!datos) return pagina('Gastos de mi obra',`<div class="msg bad">${esc(error)}</div>
-    <button class="btn" onclick="go('c-obra')">Volver a mis proyectos</button>`);
+    <button class="btn" onclick="${errorFiltro?"draw()":"go('c-obra')"}">${errorFiltro?'Quitar los filtros':'Volver a mis proyectos'}</button>`);
 
+  // El resumen abarca todos los gastos; el filtro por partida, la búsqueda, las fechas y la página los resuelve el servidor
   ST.partidasCli=datos.resumen.map(p=>p.partida);
-  if(ST.partidaCli&&!ST.partidasCli.includes(ST.partidaCli)) ST.partidaCli=null;
-  const visibles=ST.partidaCli?datos.gastos.filter(g=>g.partida===ST.partidaCli):datos.gastos;
-  const subtotal=visibles.reduce((a,g)=>a+g.monto,0);
+  const partidaSel=filtroDe('fGastosCli').partida;
+  const visibles=datos.gastos;
   const sinPartida=p=>p||'Sin partida';
 
   return `${navbar()}${crumbs([['Mis proyectos','c-obra'],[esc(datos.obra.nombre),'c-seg'],['Gastos']])}
@@ -1323,23 +1344,24 @@ V['c-gastos']=async()=>{
  <div class="kpi" style="margin-bottom:20px">
   <div><div class="v">${S(datos.total)}</div><div class="l">Invertido a la fecha</div></div>
   <div><div class="v">${datos.obra.avancePorcentaje}%</div><div class="l">Avance de obra</div></div>
-  <div><div class="v">${datos.gastos.length}</div><div class="l">Gastos registrados</div></div></div>
+  <div><div class="v">${datos.cantidad}</div><div class="l">Gastos registrados</div></div></div>
  <div class="card"><div class="ch"><h4>Resumen por partida</h4></div>
   <table><thead><tr><th>Partida</th><th class="num">Gastos</th><th class="num">Acumulado</th><th></th></tr></thead><tbody>
-  ${datos.resumen.map((p,i)=>`<tr${p.partida===ST.partidaCli?' style="background:#F5F7F8"':''}><td><b>${esc(sinPartida(p.partida))}</b></td>
+  ${datos.resumen.map((p,i)=>`<tr${p.partida===partidaSel?' style="background:#F5F7F8"':''}><td><b>${esc(sinPartida(p.partida))}</b></td>
     <td class="num">${p.cantidad}</td><td class="num">${S(p.total)}</td>
-    <td style="width:130px"><button class="btn link" onclick="seleccionarPartidaCliente(${i})">${p.partida===ST.partidaCli?'Ver todos':'Ver detalle'}</button></td></tr>`).join('')
+    <td style="width:130px"><button class="btn link" onclick="seleccionarPartidaCliente(${i})">${p.partida===partidaSel?'Ver todos':'Ver detalle'}</button></td></tr>`).join('')
     ||'<tr><td colspan="4" style="text-align:center;color:var(--concrete)">Aún no hay gastos registrados en su obra.</td></tr>'}
-  ${datos.resumen.length?`<tr style="background:#F5F7F8"><td><b>Total</b></td><td class="num"><b>${datos.gastos.length}</b></td><td class="num"><b>${S(datos.total)}</b></td><td></td></tr>`:''}
+  ${datos.resumen.length?`<tr style="background:#F5F7F8"><td><b>Total</b></td><td class="num"><b>${datos.cantidad}</b></td><td class="num"><b>${S(datos.total)}</b></td><td></td></tr>`:''}
   </tbody></table></div>
- <div class="card" style="margin-top:20px"><div class="ch"><h4>Detalle · ${ST.partidaCli?esc(sinPartida(ST.partidaCli)):'Todas las partidas'}</h4>
-  ${ST.partidaCli?'<button class="btn ghost sm" onclick="seleccionarPartidaCliente(-1)">Ver todos</button>':''}</div>
-  <table><thead><tr><th>Fecha</th><th>Concepto</th><th>Proveedor</th>${ST.partidaCli?'':'<th>Partida</th>'}<th class="num">Monto</th><th></th></tr></thead><tbody>
+ <div class="card" style="margin-top:20px"><div class="ch"><h4>Detalle · ${partidaSel?esc(sinPartida(partidaSel)):'Todas las partidas'}</h4>
+  ${partidaSel?'<button class="btn ghost sm" onclick="seleccionarPartidaCliente(-1)">Ver todas las partidas</button>':''}</div>
+  ${filtrosHtml('fGastosCli')}
+  <div style="overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Proveedor</th>${partidaSel?'':'<th>Partida</th>'}<th class="num">Monto</th><th></th></tr></thead><tbody>
   ${visibles.map(g=>`<tr><td>${esc(g.fecha)}</td><td>${esc(g.concepto)}</td><td>${esc(g.proveedor)||'—'}</td>
-   ${ST.partidaCli?'':`<td>${esc(sinPartida(g.partida))}</td>`}<td class="num">${S(g.monto)}</td>
+   ${partidaSel?'':`<td>${esc(sinPartida(g.partida))}</td>`}<td class="num">${S(g.monto)}</td>
    <td style="width:150px">${g.comprobante?`<button class="btn link" onclick="verComprobanteCliente(${g.id})">Ver comprobante</button>`:'<span class="hint">Sin comprobante</span>'}</td></tr>`).join('')
-    ||`<tr><td colspan="${ST.partidaCli?5:6}" style="text-align:center;color:var(--concrete)">No hay gastos para mostrar.</td></tr>`}
-  ${visibles.length?`<tr style="background:#F5F7F8"><td colspan="${ST.partidaCli?3:4}"><b>Total</b></td><td class="num"><b>${S(subtotal)}</b></td><td></td></tr>`:''}
- </tbody></table></div>
+    ||`<tr><td colspan="${partidaSel?5:6}" style="text-align:center;color:var(--concrete)">${hayFiltros('fGastosCli')?'No hay gastos que coincidan con los filtros.':'No hay gastos para mostrar.'}</td></tr>`}
+  ${datos.filtrado.cantidad?`<tr style="background:#F5F7F8"><td colspan="${partidaSel?3:4}"><b>${hayFiltros('fGastosCli')?'Total de los gastos filtrados':'Total'} (${datos.filtrado.cantidad})</b></td><td class="num"><b>${S(datos.filtrado.subtotal)}</b></td><td></td></tr>`:''}
+ </tbody></table></div>${pagerHtml(datos.paginacion,'fGastosCli')}</div>
  <p class="hint" style="margin-top:12px">No se muestran los pagos individuales al personal ni el margen de la empresa. Los gastos anulados no se incluyen en el detalle ni en los montos.</p></div>`;
 };

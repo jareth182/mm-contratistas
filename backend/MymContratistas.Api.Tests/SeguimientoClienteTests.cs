@@ -60,7 +60,7 @@ namespace MymContratistas.Api.Tests
             _docAjenoId = doc.Id;
         }
 
-        private ClienteController Panel(int? usuarioId = null, string nombre = "Inversiones Del Río") => new(Db, Notificaciones.Silenciosa())
+        private ClienteController Panel(int? usuarioId = null, string nombre = "Inversiones Del Río") => new(Db, Notificaciones.Silenciosa(Db))
         {
             ControllerContext = new ControllerContext
             {
@@ -123,13 +123,39 @@ namespace MymContratistas.Api.Tests
         }
 
         [Fact]
-        public async Task Seguimiento_reconoceObrasAnterioresSinFichaPorElNombreDelCliente()
+        public async Task Seguimiento_reconoceObrasAnterioresSinFicha_soloAUnaCuentaSinFichaConEseNombre()
         {
             var anterior = new Obra { Nombre = "Obra anterior", Cliente = "Cliente Antiguo" };
             Db.Obras.Add(anterior);
+            var rol = Db.Roles.Single(r => r.Nombre == NombresRol.Cliente);
+            var cuentaAntigua = new Usuario { Nombres = "Cliente Antiguo", Correo = "antiguo@mail.com", RolId = rol.Id, PasswordHash = "x" };
+            Db.Usuarios.Add(cuentaAntigua);
             await Db.SaveChangesAsync();
 
-            Assert.Equal(200, Estado(await Panel(nombre: "Cliente Antiguo").SeguimientoDeObra(anterior.Id)));
+            Assert.Equal(200, Estado(await Panel(cuentaAntigua.Id, "Cliente Antiguo").SeguimientoDeObra(anterior.Id)));
+        }
+
+        [Fact]
+        public async Task UnaCuentaConFicha_noAccedeAObrasAntiguasDeOtroClientePorTenerElMismoNombre()
+        {
+            var anterior = new Obra { Nombre = "Obra anterior", Cliente = "Inversiones Del Río" };   // mismo nombre que la cuenta con ficha
+            Db.Obras.Add(anterior);
+            await Db.SaveChangesAsync();
+
+            AssertSinPermiso(await Panel().SeguimientoDeObra(anterior.Id));
+            Assert.DoesNotContain(Lista(await Panel().MisObras()), o => (string)Valor(o, "Nombre") == "Obra anterior");
+        }
+
+        [Fact]
+        public async Task UnaCuentaSinFichaYSinNombre_noVeObrasAntiguasSinFicha()
+        {
+            Db.Obras.Add(new Obra { Nombre = "Obra anterior", Cliente = "" });
+            var rol = Db.Roles.Single(r => r.Nombre == NombresRol.Cliente);
+            var anonima = new Usuario { Nombres = "", Correo = "sin-nombre@mail.com", RolId = rol.Id, PasswordHash = "x" };
+            Db.Usuarios.Add(anonima);
+            await Db.SaveChangesAsync();
+
+            Assert.Empty(Lista(await Panel(anonima.Id, "").MisObras()));
         }
 
         // ---- Detalle de hito: descripción y fotografías (T4) ----
