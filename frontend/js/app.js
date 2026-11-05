@@ -11,6 +11,44 @@ function verDetalleHitoCliente(id){
   ST.hitoCliId=ST.hitoCliId===id?null:id;ST.msg=null;
   draw().then(()=>{const d=document.getElementById('detalle_hito_cli');if(d)d.scrollIntoView({block:'start'})});
 }
+// Gastos del cliente (HU21)
+function abrirGastos(id){ST.obraCliId=id;ST.partidaCli=null;go('c-gastos')}
+function seleccionarPartidaCliente(i){
+  ST.partidaCli=i>=0&&ST.partidaCli!==ST.partidasCli[i]?ST.partidasCli[i]:null;
+  ST.msg=null;draw();
+}
+
+// Visor ampliado del comprobante: se pide con el token y se muestra sin salir de la página
+async function verComprobanteCliente(id){
+  try{
+    const r=await apiFetch(`${API}/api/cliente/gastos/${id}/comprobante`);
+    if(!r.ok) return say('bad', r.status===403 ? ((await r.text())||'No tiene permisos para ver este comprobante.') : 'No se pudo abrir el comprobante.');
+    const blob=await r.blob();
+    const url=URL.createObjectURL(blob);
+    const nombre=nombreDeRespuesta(r,'comprobante');
+    cerrarComprobanteCliente();
+    const capa=document.createElement('div');
+    capa.id='modal_comprobante';
+    capa.dataset.url=url;
+    capa.style.cssText='position:fixed;inset:0;background:rgba(10,25,41,.75);display:flex;align-items:center;justify-content:center;z-index:900;padding:16px';
+    capa.onclick=e=>{if(e.target===capa)cerrarComprobanteCliente()};
+    const contenido=blob.type==='application/pdf'
+      ?`<iframe src="${url}" title="${esc(nombre)}" style="width:100%;height:100%;border:0;background:#fff"></iframe>`
+      :`<img src="${url}" alt="${esc(nombre)}" style="max-width:100%;max-height:100%;margin:auto;display:block;object-fit:contain">`;
+    capa.innerHTML=`<div class="card" style="width:min(900px,100%);height:min(88vh,100%);display:flex;flex-direction:column;margin:0">
+      <div class="ch"><h4>Comprobante · ${esc(nombre)}</h4><span style="display:flex;gap:8px">
+        <a class="btn sm" href="${url}" download="${esc(nombre)}">Descargar</a>
+        <button class="btn ghost sm" onclick="cerrarComprobanteCliente()">Cerrar</button></span></div>
+      <div style="flex:1;min-height:0;overflow:auto;background:#EEF1F3;display:flex">${contenido}</div></div>`;
+    document.body.appendChild(capa);
+  }catch(e){say('bad','Error de conexión con el servidor.')}
+}
+function cerrarComprobanteCliente(){
+  const capa=document.getElementById('modal_comprobante');
+  if(!capa) return;
+  URL.revokeObjectURL(capa.dataset.url);
+  capa.remove();
+}
 function tab(t){ST.tab=t;ST.msg=null;draw()}
 function tog(m,e){e.stopPropagation();ST.menu=ST.menu===m?null:m;draw()}
 function say(t,x){ST.msg=`<div class="msg ${t}">${x}</div>`;draw();
