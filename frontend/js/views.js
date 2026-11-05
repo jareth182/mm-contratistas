@@ -1075,35 +1075,76 @@ TC.econ = async () => {
  <p class="hint" style="margin-top:12px">Seleccione una partida para ver sus gastos y pagos. Los porcentajes se calculan automáticamente con el registro de gastos y pagos.</p>`;
 };
 
-/* ---- cliente ---- */
+/* ---- cliente (HU20) ---- */
+const etiquetaEstado=e=>e==='Completado'?'<span class="tg ok">Completado</span>':e==='En proceso'?'<span class="tg wn">En proceso</span>':'<span class="tg mt">Pendiente</span>';
+const barraAvance=(p,alto)=>`<div style="display:flex;align-items:center;gap:9px"><div class="bar" style="flex:1${alto?`;height:${alto}px`:''}"><i style="width:${p}%"></i></div><b>${p}%</b></div>`;
+
+// Mis proyectos: solo los proyectos vinculados a la cuenta del cliente
 V['c-obra']=async()=>{
-  let obra=null;
+  let obras=[],error=null;
   try{
     const r=await apiFetch(`${API}/api/cliente/obras`);
-    if(r.ok){const l=await r.json();obra=l[0]||null}
-  }catch(e){}
-  if(!obra) return `${navbar()}${crumbs([['Mi obra']])}
-   <div class="page"><div class="phead"><div><h1>Mi obra</h1></div></div>
-   ${ST.msg||''}
-   <div class="msg warn">Aún no tiene una obra asignada. Si cree que es un error, comuníquese con M/M Contratistas.</div></div>`;
+    if(r.ok) obras=await r.json(); else error='No se pudo cargar sus proyectos. Intente nuevamente.';
+  }catch(e){error='Error de conexión con el servidor.'}
+  const cuerpo=error?`<div class="msg bad">${error}</div>`
+    :!obras.length?'<div class="msg warn">Aún no tiene un proyecto asignado. Si cree que es un error, comuníquese con M/M Contratistas.</div>'
+    :`<div class="card"><table><thead><tr><th>Proyecto</th><th>Estado</th><th style="width:210px">Avance</th><th>Inicio</th><th>Fin estimado</th><th></th></tr></thead><tbody>
+      ${obras.map(o=>`<tr><td><b>${esc(o.nombre)}</b></td>
+       <td><span class="tg ${o.estado==='Finalizado'?'mt':'ok'}">${o.estado==='Finalizado'?'Finalizado':'En ejecución'}</span></td>
+       <td>${barraAvance(o.avancePorcentaje)}</td>
+       <td>${fmtFecha(o.fechaInicio)}</td><td>${fmtFecha(o.fechaFinEstimada)}</td>
+       <td style="width:150px"><button class="btn sm" onclick="abrirSeguimiento(${o.id})">Ver seguimiento</button></td></tr>`).join('')}
+      </tbody></table></div>`;
+  return `${navbar()}${crumbs([['Mis proyectos']])}
+ <div class="page"><div class="phead"><div><h1>Mis proyectos</h1>
+  <p>Proyectos de M/M Contratistas vinculados a su cuenta.</p></div>${ST.hu?'<span class="hu">HU20</span>':''}</div>
+ ${ST.msg||''}
+ ${cuerpo}</div>`;
+};
+
+// Seguimiento de Obra: avance general, secuencia de hitos, detalle de hito y documentos visibles
+V['c-seg']=async()=>{
+  if(!ST.obraCliId){ST.v='c-obra';return V['c-obra']()}
+  let obra=null,sinPermiso=null,error=null;
+  try{
+    const r=await apiFetch(`${API}/api/cliente/obras/${ST.obraCliId}`);
+    if(r.ok) obra=await r.json();
+    else if(r.status===403) sinPermiso=(await r.text())||'No tiene permisos para ver este proyecto.';
+    else error='No se pudo cargar el seguimiento de la obra. Intente nuevamente.';
+  }catch(e){error='Error de conexión con el servidor.'}
+
+  if(!obra){
+    if(sinPermiso) ST.obraCliId=null;
+    return `${navbar()}${crumbs([['Mis proyectos','c-obra'],['Seguimiento de obra']])}
+     <div class="page"><div class="phead"><div><h1>Seguimiento de obra</h1></div>${ST.hu?'<span class="hu">HU20</span>':''}</div>
+     <div class="msg bad">${esc(sinPermiso||error)}</div>
+     <button class="btn" onclick="go('c-obra')">Volver a mis proyectos</button></div>`;
+  }
+
   const hitos=obra.hitos;
-  return `${navbar()}${crumbs([['Mi obra']])}
+  const completados=hitos.filter(h=>h.estado==='Completado').length;
+  const detalle=ST.hitoCliId?await detalleHitoCliente(ST.hitoCliId):'';
+  return `${navbar()}${crumbs([['Mis proyectos','c-obra'],['Seguimiento de obra']])}
  <div class="page"><div class="phead"><div><h1>${esc(obra.nombre)}</h1>
-  <p>${esc(obra.cliente)}</p></div>
+  <p>${esc(obra.cliente)}${obra.ubicacion?' · '+esc(obra.ubicacion):''}</p></div>
   <div style="display:flex;gap:7px;align-items:center"><span class="tg ${obra.estado==='Finalizado'?'mt':'ok'}">${obra.estado==='Finalizado'?'Finalizado':'En ejecución'}</span>${ST.hu?'<span class="hu">HU20</span>':''}</div></div>
   ${ST.msg||''}
- ${elevHitos(hitos)}
- <div class="card" style="margin-top:20px"><div class="ch"><h4>Etapas de la obra</h4></div>
-  <table><thead><tr><th>Hito</th><th>Estado</th><th>Fecha planificada</th><th>Fecha real</th></tr></thead><tbody>
-  ${hitos.map(h=>`<tr><td><b>${esc(h.nombre)}</b></td>
-   <td>${h.estado==='Completado'?'<span class="tg ok">Completado</span>':h.estado==='En proceso'?'<span class="tg wn">En proceso</span>':'<span class="tg mt">Pendiente</span>'}</td>
-   <td>${fmtFecha(h.fechaPlanificada)}</td><td>${fmtFecha(h.fechaReal)}</td></tr>`).join('')||'<tr><td colspan="4" style="text-align:center;color:var(--concrete)">El equipo aún no ha definido los hitos de su obra.</td></tr>'}
+ <div class="kpi" style="margin-bottom:14px">
+  <div><div class="v">${obra.avancePorcentaje}%</div><div class="l">Avance general</div></div>
+  <div><div class="v">${completados} de ${hitos.length}</div><div class="l">Hitos completados</div></div>
+  <div><div class="v" style="font-size:22px">${fmtFecha(obra.fechaInicio)}</div><div class="l">Fecha de inicio</div></div>
+  <div><div class="v" style="font-size:22px">${fmtFecha(obra.fechaFinEstimada)}</div><div class="l">Fin estimado</div></div></div>
+ <div class="card"><div class="cb"><div class="hint" style="margin-bottom:6px">Avance general de la obra</div>${barraAvance(obra.avancePorcentaje,14)}</div></div>
+ <div style="margin-top:20px">${hitos.length?elevHitos(hitos):''}</div>
+ <div class="card" style="margin-top:20px"><div class="ch"><h4>Hitos de la obra</h4></div>
+  <table><thead><tr><th>Hito</th><th>Estado</th><th style="width:170px">Avance</th><th>Fecha planificada</th><th>Fecha real de término</th><th></th></tr></thead><tbody>
+  ${hitos.map(h=>`<tr${h.id===ST.hitoCliId?' style="background:#F5F7F8"':''}><td><b>${esc(h.nombre)}</b></td>
+   <td>${etiquetaEstado(h.estado)}</td><td>${barraAvance(h.avancePorcentaje)}</td>
+   <td>${fmtFecha(h.fechaPlanificada)}</td><td>${fmtFecha(h.fechaReal)}</td>
+   <td style="width:120px"><button class="btn link" onclick="verDetalleHitoCliente(${h.id})">${h.id===ST.hitoCliId?'Ocultar detalle':'Ver detalle'}</button></td></tr>`).join('')||'<tr><td colspan="6" style="text-align:center;color:var(--concrete)">El equipo aún no ha definido los hitos de su obra.</td></tr>'}
   </tbody></table></div>
- <div class="card" style="margin-top:20px"><div class="ch"><h4>Estructura · avance del 10/09/2026</h4>
-   <button class="btn ghost sm" onclick="go('c-cmt')">Comentar</button></div>
-  <div class="cb"><p style="margin-top:0">Vaciado de losa del cuarto nivel y desencofrado de columnas del tercero.</p>
-   <div class="thumbs"><div class="th">Losa nivel 4</div><div class="th">Columnas</div><div class="th">Vista general</div></div></div></div>
- <div class="card" style="margin-top:20px"><div class="ch"><h4>Documentos de mi obra</h4></div>
+ ${detalle}
+ <div class="card" style="margin-top:20px"><div class="ch"><h4>Documentos</h4></div>
   <table><thead><tr><th>Documento</th><th>Clasificación</th><th>Fecha de carga</th><th></th></tr></thead><tbody>
   ${(obra.documentos||[]).map(d=>`<tr><td><b>${esc(d.nombre)}</b></td><td><span class="tg mt">${esc(d.clasificacion)}</span></td><td>${esc(d.fechaCarga)}</td>
    <td style="width:110px"><button class="btn link" onclick="descargarArchivo('${API}/api/cliente/documentos/${d.id}/descargar')">Descargar</button></td></tr>`).join('')||'<tr><td colspan="4" style="text-align:center;color:var(--concrete)">El equipo aún no ha compartido documentos de su obra.</td></tr>'}
@@ -1111,8 +1152,34 @@ V['c-obra']=async()=>{
  </div>`;
 };
 
+// Detalle de un hito para el cliente: descripción de cada avance y sus fotografías
+async function detalleHitoCliente(hitoId){
+  let cuerpo,titulo='Detalle del hito';
+  try{
+    const r=await apiFetch(`${API}/api/cliente/hitos/${hitoId}/avances`);
+    if(r.status===403) cuerpo=`<div class="msg bad" style="margin:14px">${esc((await r.text())||'No tiene permisos para ver este hito.')}</div>`;
+    else if(!r.ok) cuerpo='<div class="msg bad" style="margin:14px">No se pudo cargar el detalle del hito.</div>';
+    else{
+      const d=await r.json();
+      titulo+=' · '+esc(d.hito.nombre);
+      const avances=d.avances.length?d.avances.map(a=>`<div class="cmt" style="margin-bottom:12px">
+        <b>${a.porcentaje}% de avance</b><time>${fmtFechaHora(a.fecha)}</time>
+        <p style="margin:5px 0 8px">${esc(a.descripcion)}</p>
+        <div class="thumbs">${a.fotos.length
+          ?a.fotos.map(f=>`<img class="th" data-foto-cliente="${f.id}" alt="${esc(f.nombre)}" title="${esc(f.nombre)}" style="object-fit:cover;cursor:pointer" onclick="ampliarFotoAvance(this)">`).join('')
+          :'<span class="hint">Sin fotografías</span>'}</div></div>`).join('')
+        :d.hito.descripcionAvance?`<p>${esc(d.hito.descripcionAvance)}</p>`
+        :'<p class="hint">Aún no se registraron avances en este hito.</p>';
+      cuerpo=`<div class="cb"><div style="display:flex;gap:10px;align-items:center;margin-bottom:12px">${etiquetaEstado(d.hito.estado)}
+        <span class="hint">Planificado: ${fmtFecha(d.hito.fechaPlanificada)} · Término real: ${fmtFecha(d.hito.fechaReal)}</span></div>${avances}</div>`;
+    }
+  }catch(e){cuerpo='<div class="msg bad" style="margin:14px">Error de conexión con el servidor.</div>'}
+  return `<div class="card" id="detalle_hito_cli" style="margin-top:20px"><div class="ch"><h4>${titulo}</h4>
+    <button class="btn ghost sm" onclick="verDetalleHitoCliente(${hitoId})">Cerrar</button></div>${cuerpo}</div>`;
+}
+
 V['c-gastos']=()=>{const t=OBRA.part.reduce((a,p)=>a+p.gs,0);
- return `${navbar()}${crumbs([['Mi obra','c-obra'],['Gastos']])}
+ return `${navbar()}${crumbs([['Mis proyectos','c-obra'],['Gastos']])}
  <div class="page"><div class="phead"><div><h1>En qué se ha invertido</h1>
   <p>Detalle de los gastos de su obra con el comprobante de cada uno.</p></div>${ST.hu?'<span class="hu">HU21</span>':''}</div>
  <div class="kpi" style="margin-bottom:20px">
@@ -1128,7 +1195,7 @@ V['c-gastos']=()=>{const t=OBRA.part.reduce((a,p)=>a+p.gs,0);
  </tbody></table></div>
  <p class="hint" style="margin-top:12px">No se muestran los pagos individuales al personal ni el margen de la empresa.</p></div>`;};
 
-V['c-cmt']=()=>`${navbar()}${crumbs([['Mi obra','c-obra'],['Comentarios']])}
+V['c-cmt']=()=>`${navbar()}${crumbs([['Mis proyectos','c-obra'],['Comentarios']])}
  <div class="page" style="max-width:800px"><div class="phead"><div><h1>Comentarios · Estructura</h1>
   <p>Sus consultas sobre este avance quedan registradas junto con la respuesta del equipo de obra.</p></div>${ST.hu?'<span class="hu">HU22</span>':''}</div>
  ${ST.msg||''}

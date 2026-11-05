@@ -25,7 +25,7 @@ function navbar(){
     user=userMenu(iniciales(ST.usuario.nombreCompleto),ST.usuario.nombreCompleto,rol,true);
   }else{
     const on=v=>ST.v===v?'on':'';
-    links=`<button class="${on('c-obra')}" onclick="go('c-obra')">Mi obra</button>
+    links=`<button class="${on('c-obra')||on('c-seg')}" onclick="go('c-obra')">Mis proyectos</button>
       <button class="${on('c-gastos')}" onclick="go('c-gastos')">Gastos</button>
       <button class="${on('c-cmt')}" onclick="go('c-cmt')">Comentarios</button>`;
     user=userMenu(iniciales(ST.usuario.nombreCompleto),ST.usuario.nombreCompleto,ST.usuario.rol,false);
