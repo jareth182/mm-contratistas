@@ -5,7 +5,7 @@ const SESION_KEY = 'mym_sesion';
 // Vistas que requieren sesión y roles que pueden verlas
 const VISTAS_PERSONAL = ['tablero', 'proyectos', 'obra', 'personal', 'docpers', 'alertas'];
 const VISTAS_SITIO = ['portafolio', 'servicios-adm'];
-const VISTAS_CLIENTE = ['c-obra', 'c-seg', 'c-gastos', 'c-cmt'];
+const VISTAS_CLIENTE = ['c-obra', 'c-seg', 'c-gastos'];
 const PERMISOS = {
   'Administrador': [...VISTAS_PERSONAL, ...VISTAS_SITIO, 'usuarios', 'perfil'],
   'Gerente de Operaciones': [...VISTAS_PERSONAL, ...VISTAS_SITIO, 'perfil'],

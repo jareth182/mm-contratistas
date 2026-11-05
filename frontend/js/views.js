@@ -581,6 +581,30 @@ async function detalleHito(h) {
     filasHistorial = '<tr><td colspan="5" style="text-align:center;color:var(--rust)">Error al cargar el historial de avances.</td></tr>';
   }
 
+  // Conversación con el cliente (HU22)
+  let comentariosHtml = '';
+  try {
+    const respuesta = await apiFetch(`${API}/api/obras/hitos/${h.id}/comentarios`);
+    const comentarios = respuesta.ok ? await respuesta.json() : [];
+    const sinResponder = comentarios.filter(c => !c.respondeA && !c.esPersonal && !comentarios.some(x => x.respondeA === c.id)).length;
+    const acciones = (c, nRespuestas) => ST.respondiendoA === c.id
+      ? `<div style="padding:10px 12px;border-top:1px solid var(--line-2)">
+          <div class="f"><label for="resp_texto">Su respuesta al cliente</label>
+            <textarea id="resp_texto" maxlength="500" oninput="contarCaracteres(this,'resp_contador')"></textarea>
+            <div class="hint" style="margin-top:4px"><span id="resp_contador">0</span> / 500 caracteres · el cliente la verá en su panel y recibirá un aviso por correo</div></div>
+          <div id="resp_error"></div>
+          <button class="btn sm" id="resp_enviar" onclick="enviarRespuesta(${c.id})">Enviar respuesta</button>
+          <button class="btn ghost sm" style="margin-left:8px" onclick="cancelarRespuesta()">Cancelar</button></div>`
+      : `<div style="padding:8px 12px;border-top:1px solid var(--line-2);display:flex;gap:10px;align-items:center">
+          <button class="btn link" onclick="responderComentario(${c.id})">Responder</button>
+          ${nRespuestas ? '' : '<span class="tg wn">Sin responder</span>'}</div>`;
+    comentariosHtml = `<h4 style="margin-top:22px" id="comentarios_hito">Comentarios del cliente${sinResponder ? ` · <span class="tg wn">${sinResponder} sin responder</span>` : ''}</h4>
+      ${ST.avisoRespuesta || ''}
+      ${hiloComentarios(comentarios, acciones)}`;
+  } catch (error) {
+    comentariosHtml = '<h4 style="margin-top:22px">Comentarios del cliente</h4><p class="hint" style="color:var(--rust)">Error al cargar los comentarios.</p>';
+  }
+
   const completado = h.estado === 'Completado';
   const estado = completado ? '<span class="tg ok">Completado</span>' : h.estado === 'En proceso' ? '<span class="tg wn">En proceso</span>' : '<span class="tg mt">Pendiente</span>';
   const hoy = new Date().toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -604,7 +628,7 @@ async function detalleHito(h) {
     </div></div>`;
 
   return `<div class="card" style="margin-top:20px" id="detalle_hito">
-    <div class="ch"><h4>Detalle del hito · <span style="color:var(--safety)">${esc(h.nombre)}</span></h4>${ST.hu ? '<span class="hu">HU13</span>' : ''}</div>
+    <div class="ch"><h4>Detalle del hito · <span style="color:var(--safety)">${esc(h.nombre)}</span></h4>${ST.hu ? '<span class="hu">HU13 · HU22</span>' : ''}</div>
     <div class="cb">
       <div class="g3">
         <div class="f"><label>Estado</label>${estado}</div>
@@ -620,6 +644,7 @@ async function detalleHito(h) {
       <table><thead><tr><th>Fecha</th><th class="num">Avance</th><th>Descripción</th><th>Responsable</th><th>Fotografías</th></tr></thead><tbody>
       ${filasHistorial}
       </tbody></table>
+      ${comentariosHtml}
     </div>
   </div>`;
 }
@@ -1170,8 +1195,17 @@ async function detalleHitoCliente(hitoId){
           :'<span class="hint">Sin fotografías</span>'}</div></div>`).join('')
         :d.hito.descripcionAvance?`<p>${esc(d.hito.descripcionAvance)}</p>`
         :'<p class="hint">Aún no se registraron avances en este hito.</p>';
+      const comentarios=`<h4 style="margin:22px 0 10px" id="comentarios_hito_cli">Comentarios</h4>
+        <p class="hint" style="margin-top:0">Sus consultas sobre este hito quedan registradas junto con la respuesta del equipo de obra.</p>
+        ${hiloComentarios(d.comentarios||[])}
+        ${ST.avisoComentario||''}
+        <div class="f" style="margin-top:12px"><label for="cmt_texto">Escribir un comentario</label>
+          <textarea id="cmt_texto" maxlength="500" placeholder="Su comentario sobre este hito" oninput="contarCaracteres(this,'cmt_contador')"></textarea>
+          <div class="hint" style="margin-top:4px"><span id="cmt_contador">0</span> / 500 caracteres</div></div>
+        <div id="cmt_error"></div>
+        <button class="btn" id="cmt_enviar" onclick="enviarComentarioCliente(${hitoId})">Enviar comentario</button>`;
       cuerpo=`<div class="cb"><div style="display:flex;gap:10px;align-items:center;margin-bottom:12px">${etiquetaEstado(d.hito.estado)}
-        <span class="hint">Planificado: ${fmtFecha(d.hito.fechaPlanificada)} · Término real: ${fmtFecha(d.hito.fechaReal)}</span></div>${avances}</div>`;
+        <span class="hint">Planificado: ${fmtFecha(d.hito.fechaPlanificada)} · Término real: ${fmtFecha(d.hito.fechaReal)}</span></div>${avances}${comentarios}</div>`;
     }
   }catch(e){cuerpo='<div class="msg bad" style="margin:14px">Error de conexión con el servidor.</div>'}
   return `<div class="card" id="detalle_hito_cli" style="margin-top:20px"><div class="ch"><h4>${titulo}</h4>
@@ -1239,21 +1273,3 @@ V['c-gastos']=async()=>{
  </tbody></table></div>
  <p class="hint" style="margin-top:12px">No se muestran los pagos individuales al personal ni el margen de la empresa. Los gastos anulados no se incluyen en el detalle ni en los montos.</p></div>`;
 };
-
-V['c-cmt']=()=>`${navbar()}${crumbs([['Mis proyectos','c-obra'],['Comentarios']])}
- <div class="page" style="max-width:800px"><div class="phead"><div><h1>Comentarios · Estructura</h1>
-  <p>Sus consultas sobre este avance quedan registradas junto con la respuesta del equipo de obra.</p></div>${ST.hu?'<span class="hu">HU22</span>':''}</div>
- ${ST.msg||''}
- <div class="card"><div class="cb">
-  <div class="cmt"><b>Inversiones Del Río</b><time>02/09/2026 · 10:24</time>
-   <p style="margin:5px 0 0">¿La losa del cuarto nivel se vació completa o quedó un paño pendiente?</p></div>
-  <div class="cmt emp"><b>Marco Zapata</b><time>02/09/2026 · 15:40</time>
-   <p style="margin:5px 0 0">Se vació completa. El paño sin acabado que se ve en la foto es la zona de la escalera, que va en el siguiente frente.</p></div>
-  <div class="cmt"><b>Inversiones Del Río</b><time>08/09/2026 · 09:12</time>
-   <p style="margin:5px 0 0">Perfecto, gracias. ¿Siguen dentro del plazo para cerrar estructura?</p></div>
- </div></div>
- <div class="card" style="margin-top:16px"><div class="cb">
-  <div class="f"><label>Escribir un comentario</label><textarea placeholder="Su comentario sobre este hito"></textarea>
-   <div class="hint" style="margin-top:4px">Hasta 500 caracteres.</div></div>
-  <button class="btn" onclick="say('ok','Comentario enviado correctamente.')">Enviar</button></div></div>
- </div>`;

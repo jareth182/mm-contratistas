@@ -158,7 +158,7 @@ namespace MymContratistas.Api.Tests
             var (_, hito) = await Agregar("Excavación", 10);
             await _obras.EditarHito(hito!.Id, Dto("Excavación y nivelación", 15));
 
-            var panel = new ClienteController(Db)
+            var panel = new ClienteController(Db, Notificaciones.Silenciosa())
             {
                 ControllerContext = new ControllerContext
                 {
