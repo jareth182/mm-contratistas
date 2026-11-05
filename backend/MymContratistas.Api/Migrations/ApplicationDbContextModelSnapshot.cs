@@ -830,6 +830,14 @@ namespace MymContratistas.Api.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("Archivo")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ArchivoNombre")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<DateOnly>("FechaInicio")
                         .HasColumnType("date");
 

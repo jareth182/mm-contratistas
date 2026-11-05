@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MymContratistas.Api.Data;
 using MymContratistas.Api.Models;
+using MymContratistas.Api.Services;
 
 namespace MymContratistas.Api.Controllers
 {
@@ -50,6 +51,24 @@ namespace MymContratistas.Api.Controllers
             estado = t.Estado
         };
 
+        // Ficha con el estado de su SCTR y su examen médico (HU23)
+        private static object ProyectarConDocumentos(Trabajador t, IReadOnlyDictionary<string, VigenciaDocumento>? ultimas, DateOnly hoy) => new
+        {
+            id = t.Id,
+            nombres = t.Nombres,
+            apellidos = t.Apellidos,
+            nombreCompleto = t.NombreCompleto,
+            tipoDocumento = t.TipoDocumento,
+            documento = t.Documento,
+            especialidad = t.Especialidad,
+            telefono = t.Telefono,
+            jornalDiario = t.JornalDiario,
+            estado = t.Estado,
+            sctr = VigenciasDocumentales.Resumen(ultimas, VigenciaDocumento.Sctr, hoy),
+            examenMedico = VigenciasDocumentales.Resumen(ultimas, VigenciaDocumento.ExamenMedico, hoy),
+            estadoDocumental = VigenciasDocumentales.EstadoGeneral(ultimas, hoy)
+        };
+
         private async Task<string?> Validar(TrabajadorDto dto, int? id)
         {
             if (string.IsNullOrWhiteSpace(dto.Nombres)) return "Los nombres son obligatorios.";
@@ -90,7 +109,20 @@ namespace MymContratistas.Api.Controllers
                     || t.Documento.ToLower().StartsWith(texto) || t.Especialidad.ToLower().Contains(texto));
 
             var lista = await consulta.OrderBy(t => t.Estado).ThenBy(t => t.Apellidos).ThenBy(t => t.Nombres).ToListAsync();
-            return Ok(lista.Select(Proyectar));
+            var vigencias = await VigenciasDocumentales.UltimasAsync(_context, lista.Select(t => t.Id).ToList());
+            var hoy = DateOnly.FromDateTime(DateTime.Now);
+            return Ok(lista.Select(t => ProyectarConDocumentos(t, vigencias.GetValueOrDefault(t.Id), hoy)));
+        }
+
+        // GET: api/personal/{id}  — ficha del colaborador con su estado documental
+        [HttpGet("{id:int}")]
+        public async Task<IActionResult> Obtener(int id)
+        {
+            var trabajador = await _context.Personal.FindAsync(id);
+            if (trabajador == null) return NotFound(new { mensaje = "El colaborador no existe." });
+
+            var vigencias = await VigenciasDocumentales.UltimasAsync(_context, new[] { id });
+            return Ok(ProyectarConDocumentos(trabajador, vigencias.GetValueOrDefault(id), DateOnly.FromDateTime(DateTime.Now)));
         }
 
         [HttpGet("especialidades")]
@@ -150,20 +182,28 @@ namespace MymContratistas.Api.Controllers
             public string? Tipo { get; set; }
             public DateOnly? FechaInicio { get; set; }
             public DateOnly? FechaVencimiento { get; set; }
+            public IFormFile? Archivo { get; set; }
         }
 
-        private static object Proyectar(VigenciaDocumento v, DateOnly hoy) => new
+        private static string CarpetaVigencias() => Path.Combine(Directory.GetCurrentDirectory(), "Uploads", "vigencias");
+
+        private static object Proyectar(VigenciaDocumento v, DateOnly hoy, bool actual) => new
         {
             id = v.Id,
             tipo = v.Tipo,
             fechaInicio = v.FechaInicio,
             fechaVencimiento = v.FechaVencimiento,
-            estado = VigenciaDocumento.EstadoAl(v.FechaVencimiento, hoy)
+            fechaRegistro = v.FechaRegistro,
+            estado = VigenciaDocumento.EstadoAl(v.FechaVencimiento, hoy),
+            // La vigente de cada documento es la de mayor vencimiento; las demás son el historial
+            actual,
+            archivo = string.IsNullOrEmpty(v.Archivo) ? null : v.ArchivoNombre
         };
 
-        // POST: api/personal/{id}/vigencias  — registra o renueva el SCTR o el examen médico; las anteriores quedan en el historial
+        // POST: api/personal/{id}/vigencias  (multipart: tipo, fechaInicio, fechaVencimiento, archivo)
+        // Registra o renueva el SCTR o el examen médico; las vigencias anteriores quedan en el historial
         [HttpPost("{id}/vigencias")]
-        public async Task<IActionResult> RegistrarVigencia(int id, [FromBody] VigenciaDto dto)
+        public async Task<IActionResult> RegistrarVigencia(int id, [FromForm] VigenciaDto dto)
         {
             if (!await _context.Personal.AnyAsync(t => t.Id == id)) return NotFound(new { mensaje = "El colaborador no existe." });
 
@@ -172,20 +212,41 @@ namespace MymContratistas.Api.Controllers
             if (dto.FechaInicio == null || dto.FechaVencimiento == null) return BadRequest(new { mensaje = "Ingrese las fechas de inicio y de vencimiento." });
             if (dto.FechaVencimiento <= dto.FechaInicio) return BadRequest(new { mensaje = "El vencimiento debe ser posterior al inicio de la vigencia." });
 
+            // Una renovación debe extender la cobertura: si no, la nueva vigencia quedaría oculta tras la anterior
+            var vigente = await _context.Vigencias.Where(v => v.TrabajadorId == id && v.Tipo == tipo)
+                .OrderByDescending(v => v.FechaVencimiento).ThenByDescending(v => v.Id).FirstOrDefaultAsync();
+            if (vigente != null && dto.FechaVencimiento <= vigente.FechaVencimiento)
+                return BadRequest(new { mensaje = $"La nueva vigencia debe vencer después de la actual ({vigente.FechaVencimiento:dd/MM/yyyy})." });
+
+            if (dto.Archivo == null || dto.Archivo.Length == 0) return BadRequest(new { mensaje = $"Adjunte el documento del {tipo} (PDF, JPG o PNG)." });
+            var nombreOriginal = Path.GetFileName(dto.Archivo.FileName);
+            if (nombreOriginal.Length > 150) return BadRequest(new { mensaje = "El nombre del archivo no puede superar los 150 caracteres." });
+            var errorArchivo = await ObrasController.ValidarDocumento(dto.Archivo);
+            if (errorArchivo != null) return BadRequest(new { mensaje = errorArchivo });
+
+            var guardado = $"{Guid.NewGuid():N}{Path.GetExtension(dto.Archivo.FileName).ToLowerInvariant()}";
+            Directory.CreateDirectory(CarpetaVigencias());
+            await using (var destino = new FileStream(Path.Combine(CarpetaVigencias(), guardado), FileMode.Create))
+                await dto.Archivo.CopyToAsync(destino);
+
             var vigencia = new VigenciaDocumento
             {
                 TrabajadorId = id,
                 Tipo = tipo,
                 FechaInicio = dto.FechaInicio.Value,
                 FechaVencimiento = dto.FechaVencimiento.Value,
-                FechaRegistro = DateTime.UtcNow
+                FechaRegistro = DateTime.UtcNow,
+                Archivo = guardado,
+                ArchivoNombre = nombreOriginal
             };
             _context.Vigencias.Add(vigencia);
             await _context.SaveChangesAsync();
-            return StatusCode(201, new { mensaje = $"{tipo} registrado correctamente.", vigencia = Proyectar(vigencia, DateOnly.FromDateTime(DateTime.Now)) });
+
+            var mensaje = vigente == null ? $"{tipo} registrado correctamente." : $"{tipo} renovado correctamente. La vigencia anterior quedó en el historial.";
+            return StatusCode(201, new { mensaje, vigencia = Proyectar(vigencia, DateOnly.FromDateTime(DateTime.Now), actual: true) });
         }
 
-        // GET: api/personal/{id}/vigencias  — historial, de la más reciente a la más antigua
+        // GET: api/personal/{id}/vigencias  — vigente e historial de cada documento, de la más reciente a la más antigua
         [HttpGet("{id}/vigencias")]
         public async Task<IActionResult> Vigencias(int id)
         {
@@ -194,7 +255,20 @@ namespace MymContratistas.Api.Controllers
             var hoy = DateOnly.FromDateTime(DateTime.Now);
             var vigencias = await _context.Vigencias.Where(v => v.TrabajadorId == id)
                 .OrderByDescending(v => v.FechaVencimiento).ThenByDescending(v => v.Id).ToListAsync();
-            return Ok(vigencias.Select(v => Proyectar(v, hoy)));
+            var actuales = vigencias.GroupBy(v => v.Tipo).Select(g => g.First().Id).ToHashSet();
+            return Ok(vigencias.Select(v => Proyectar(v, hoy, actuales.Contains(v.Id))));
+        }
+
+        // GET: api/personal/{id}/vigencias/{vigenciaId}/archivo
+        [HttpGet("{id}/vigencias/{vigenciaId}/archivo")]
+        public async Task<IActionResult> DescargarDocumentoVigencia(int id, int vigenciaId)
+        {
+            var vigencia = await _context.Vigencias.FirstOrDefaultAsync(v => v.Id == vigenciaId && v.TrabajadorId == id);
+            if (vigencia == null || string.IsNullOrEmpty(vigencia.Archivo)) return NotFound("La vigencia no tiene documento adjunto.");
+
+            var ruta = Path.Combine(CarpetaVigencias(), Path.GetFileName(vigencia.Archivo));
+            if (!System.IO.File.Exists(ruta)) return NotFound("El archivo físico no se encontró.");
+            return PhysicalFile(ruta, ObrasController.TipoContenido(vigencia.ArchivoNombre), vigencia.ArchivoNombre);
         }
 
         // GET: api/personal/{id}/historial  — obras en las que fue asignado

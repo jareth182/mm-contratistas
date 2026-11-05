@@ -149,7 +149,7 @@ namespace MymContratistas.Api.Tests
             Vigencia(id, VigenciaDocumento.ExamenMedico, 100);
             Assert.Equal(400, (await Asignar(id)).estado);
 
-            var renovacion = await _personal.RegistrarVigencia(id, new() { Tipo = "sctr", FechaInicio = Hoy, FechaVencimiento = Hoy.AddYears(1) });
+            var renovacion = await _personal.RegistrarVigencia(id, new() { Tipo = "sctr", FechaInicio = Hoy, FechaVencimiento = Hoy.AddYears(1), Archivo = Archivos.Formulario("sctr.pdf", Archivos.Pdf()) });
 
             Assert.Equal(201, Estado(renovacion));
             Assert.Equal(200, (await Asignar(id)).estado);

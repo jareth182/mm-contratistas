@@ -374,14 +374,22 @@ V['servicios-adm']=async()=>{
 const ESPECIALIDADES=['Maestro de Obra','Operario','Oficial','Ayudante','Peón'];
 
 // Filas del listado de personal; se vuelven a pintar al escribir en el buscador sin redibujar la página
+const CLASE_DOC={'Vigente':'ok','Por vencer':'wn','Vencido':'bd','Sin registrar':'mt'};
+const etiquetaDoc=(estado,texto)=>`<span class="tg ${CLASE_DOC[estado]||'mt'}">${texto||estado}</span>`;
+const textoVencimiento=d=>!d||d.vencimiento==null?'Sin vigencia registrada'
+  :d.diasRestantes<0?`Venció el ${fmtFecha(d.vencimiento)} (hace ${-d.diasRestantes} día${d.diasRestantes===-1?'':'s'})`
+  :d.diasRestantes===0?`Vence hoy (${fmtFecha(d.vencimiento)})`
+  :`Vence el ${fmtFecha(d.vencimiento)} (en ${d.diasRestantes} día${d.diasRestantes===1?'':'s'})`;
+
 function filasPersonal(lista){
   return lista.map(t=>`<tr><td><b>${esc(t.nombreCompleto)}</b></td><td>${esc(t.tipoDocumento)} ${esc(t.documento)}</td>
    <td>${esc(t.especialidad)}</td><td>${esc(t.telefono)||'—'}</td><td class="num">${S(t.jornalDiario)}</td>
    <td>${t.estado==='Activo'?'<span class="tg ok">Activo</span>':'<span class="tg mt">Inactivo</span>'}</td>
-   <td style="width:170px;white-space:nowrap"><button class="btn link" onclick="editarTrabajador(${t.id})">Editar</button> ·
+   <td><div style="display:flex;gap:5px;flex-wrap:wrap">${etiquetaDoc(t.sctr.estado,'SCTR: '+t.sctr.estado)}${etiquetaDoc(t.examenMedico.estado,'Examen: '+t.examenMedico.estado)}</div></td>
+   <td style="width:250px;white-space:nowrap"><button class="btn link" onclick="abrirDocumentacion(${t.id})">Documentación</button> · <button class="btn link" onclick="editarTrabajador(${t.id})">Editar</button> ·
     ${t.estado==='Activo'?`<button class="btn link" onclick="cambiarEstadoTrabajador(${t.id},false)">Desactivar</button>`
       :`<button class="btn link" onclick="cambiarEstadoTrabajador(${t.id},true)">Activar</button>`}</td></tr>`).join('')
-    ||'<tr><td colspan="7" style="text-align:center;color:var(--concrete)">No hay colaboradores que coincidan.</td></tr>';
+    ||'<tr><td colspan="8" style="text-align:center;color:var(--concrete)">No hay colaboradores que coincidan.</td></tr>';
 }
 
 V.personal=async()=>{
@@ -431,32 +439,69 @@ V.personal=async()=>{
   ${ST.msg||''}
   <div class="card"><div class="ch"><input id="buscar_personal" placeholder="Buscar por nombre, documento o especialidad" oninput="filtrarPersonal()" style="flex:1;max-width:320px;padding:6px 10px;border:1px solid var(--line);font-family:var(--b)">
    <span class="hint">${personal.length} registrados · ${activos} activos</span></div>
-  <div style="overflow-x:auto"><table><thead><tr><th>Nombres y apellidos</th><th>Documento</th><th>Especialidad</th><th>Teléfono</th><th class="num">Jornal</th><th>Estado</th><th></th></tr></thead>
-  <tbody id="tabla_personal">${error?'<tr><td colspan="7" style="text-align:center;color:var(--rust)">Error al cargar el personal desde el servidor.</td></tr>':filasPersonal(personal)}</tbody></table></div></div>
+  <div style="overflow-x:auto"><table><thead><tr><th>Nombres y apellidos</th><th>Documento</th><th>Especialidad</th><th>Teléfono</th><th class="num">Jornal</th><th>Estado</th><th>Documentación</th><th></th></tr></thead>
+  <tbody id="tabla_personal">${error?'<tr><td colspan="8" style="text-align:center;color:var(--rust)">Error al cargar el personal desde el servidor.</td></tr>':filasPersonal(personal)}</tbody></table></div></div>
   ${form}</div>`;
 };
 
-V.docpers=()=>`${navbar()}${crumbs([['Personal','personal'],['Julio Ramos Bellido']])}
- <div class="page"><div class="phead"><div><h1>Julio Ramos Bellido</h1>
-   <p>Oficial · DNI 40219974 · Jornal ${S(140)} · Asignado a Edificio multifamiliar Los Cedros</p></div>${ST.hu?'<span class="hu">HU23</span>':''}</div>
+V.docpers=async()=>{
+  // Sin colaborador elegido (p. ej. desde las alertas) se vuelve al listado de personal
+  if(!ST.docTrabajadorId){ST.v='personal';return V.personal()}
+  let t=null,vigencias=[],error=null;
+  try{
+    const [rt,rv]=await Promise.all([apiFetch(`${API}/api/personal/${ST.docTrabajadorId}`),apiFetch(`${API}/api/personal/${ST.docTrabajadorId}/vigencias`)]);
+    if(rt.ok&&rv.ok){t=await rt.json();vigencias=await rv.json()}
+    else error=rt.status===404?'El colaborador no existe.':'No se pudo cargar la documentación del colaborador.';
+  }catch(e){error='Error de conexión con el servidor.'}
+  if(!t){ST.docTrabajadorId=null;
+    return `${navbar()}${crumbs([['Personal','personal'],['Documentación']])}
+     <div class="page"><div class="phead"><div><h1>Documentación</h1></div></div>
+     <div class="msg bad">${esc(error)}</div><button class="btn" onclick="go('personal')">Volver al personal</button></div>`;}
+
+  const hoy=new Date().toISOString().slice(0,10);
+  const bloque=(tipo,titulo,resumen)=>{
+    const actual=vigencias.find(x=>x.tipo===tipo&&x.actual);
+    const abierto=ST.formVigencia===tipo;
+    return `<div class="card"><div class="ch"><h4>${titulo}</h4>${etiquetaDoc(resumen.estado)}</div><div class="cb">
+      ${actual?`<div class="g2"><div class="f"><label>Fecha de inicio</label>${fmtFecha(actual.fechaInicio)}</div>
+        <div class="f"><label>Fecha de vencimiento</label>${fmtFecha(actual.fechaVencimiento)}</div></div>
+        <p style="margin:0 0 10px;${resumen.estado==='Vencido'?'color:var(--rust)':''}">${textoVencimiento(resumen)}</p>
+        <div class="thumbs">${actual.archivo
+          ?`<button class="th doc" style="cursor:pointer" title="Descargar" onclick="descargarArchivo('${API}/api/personal/${t.id}/vigencias/${actual.id}/archivo')">${esc(actual.archivo)}</button>`
+          :'<span class="hint">Sin documento adjunto</span>'}</div>`
+        :'<p class="hint" style="margin-top:0">Aún no se registró este documento. Sin él, el colaborador no puede asignarse a una cuadrilla.</p>'}
+      ${abierto?'':`<button class="btn sm" style="margin-top:12px" onclick="nuevaVigencia('${tipo}')">${actual?'Renovar vigencia':'Registrar vigencia'}</button>`}
+      ${abierto?`<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line-2)" id="form_vigencia">
+        <h4 style="margin:0 0 10px">${actual?'Renovar':'Registrar'} ${titulo}</h4>
+        <div class="g2"><div class="f"><label for="vig_inicio">Fecha de inicio</label><input id="vig_inicio" type="date" value="${hoy}"></div>
+         <div class="f"><label for="vig_venc">Fecha de vencimiento</label><input id="vig_venc" type="date"></div></div>
+        <div class="f"><label for="vig_archivo">Documento (PDF, JPG o PNG, hasta 10 MB)</label>
+          <input id="vig_archivo" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/png,image/jpeg"></div>
+        ${actual?`<div class="hint" style="margin-bottom:8px">La vigencia actual (vence el ${fmtFecha(actual.fechaVencimiento)}) quedará en el historial.</div>`:''}
+        <div id="vig_error"></div>
+        <button class="btn sm" id="vig_guardar" onclick="guardarVigencia('${tipo}')">Guardar vigencia</button>
+        <button class="btn ghost sm" style="margin-left:8px" onclick="cancelarVigencia()">Cancelar</button></div>`:''}
+    </div></div>`;
+  };
+
+  return `${navbar()}${crumbs([['Personal','personal'],[esc(t.nombreCompleto),'personal'],['Documentación']])}
+ <div class="page"><div class="phead"><div><h1>${esc(t.nombreCompleto)}</h1>
+   <p>${esc(t.especialidad)} · ${esc(t.tipoDocumento)} ${esc(t.documento)} · Jornal ${S(t.jornalDiario)} · ${t.estado==='Activo'?'Activo':'Inactivo'}</p></div>
+   <div style="display:flex;gap:7px;align-items:center"><span class="hint">Estado documental</span>${etiquetaDoc(t.estadoDocumental)}${ST.hu?'<span class="hu">HU23</span>':''}</div></div>
   ${ST.msg||''}
-  <div class="g2" style="gap:18px">
-   <div class="card"><div class="ch"><h4>SCTR</h4><span class="tg wn">Vence en 14 días</span></div><div class="cb">
-    <div class="g2"><div class="f"><label>Fecha de inicio</label><input value="24/09/2025"></div>
-     <div class="f"><label>Fecha de vencimiento</label><input value="24/09/2026"></div></div>
-    <div class="thumbs"><span class="th doc">sctr-ramos-2025.pdf</span></div>
-    <button class="btn sm" style="margin-top:12px" onclick="say('ok','Vigencia registrada correctamente.')">Registrar renovación</button></div></div>
-   <div class="card"><div class="ch"><h4>Examen médico ocupacional</h4><span class="tg ok">Vigente</span></div><div class="cb">
-    <div class="g2"><div class="f"><label>Fecha de inicio</label><input value="12/01/2026"></div>
-     <div class="f"><label>Fecha de vencimiento</label><input value="12/01/2027"></div></div>
-    <div class="thumbs"><span class="th doc">emo-ramos-2026.pdf</span></div>
-    <button class="btn sm" style="margin-top:12px" onclick="say('ok','Vigencia registrada correctamente.')">Registrar renovación</button></div></div>
+  <div class="g2" style="gap:18px;align-items:start">
+   ${bloque('SCTR','SCTR',t.sctr)}
+   ${bloque('Examen Médico','Examen médico ocupacional',t.examenMedico)}
   </div>
-  <div class="card" style="margin-top:20px"><div class="ch"><h4>Vigencias anteriores</h4></div>
-   <table><thead><tr><th>Documento</th><th>Vigencia</th><th>Archivo</th></tr></thead><tbody>
-    <tr><td>SCTR</td><td>24/09/2024 – 24/09/2025</td><td><span class="th doc">sctr-ramos-2024.pdf</span></td></tr>
-    <tr><td>Examen médico ocupacional</td><td>10/01/2025 – 10/01/2026</td><td><span class="th doc">emo-ramos-2025.pdf</span></td></tr>
-  </tbody></table></div></div>`;
+  <div class="card" style="margin-top:20px"><div class="ch"><h4>Historial de vigencias</h4><span class="hint">${vigencias.length} registradas</span></div>
+   <div style="overflow-x:auto"><table><thead><tr><th>Documento</th><th>Vigencia</th><th>Estado</th><th>Registrada</th><th>Archivo</th></tr></thead><tbody>
+    ${vigencias.map(x=>`<tr><td>${x.tipo==='SCTR'?'SCTR':'Examen médico ocupacional'}${x.actual?' <span class="tg ok">Actual</span>':''}</td>
+     <td>${fmtFecha(x.fechaInicio)} – ${fmtFecha(x.fechaVencimiento)}</td><td>${etiquetaDoc(x.estado)}</td><td>${fmtFecha(x.fechaRegistro)}</td>
+     <td>${x.archivo?`<button class="btn link" onclick="descargarArchivo('${API}/api/personal/${t.id}/vigencias/${x.id}/archivo')">${esc(x.archivo)}</button>`:'<span class="hint">Sin archivo</span>'}</td></tr>`).join('')
+      ||'<tr><td colspan="5" style="text-align:center;color:var(--concrete)">Aún no se registraron vigencias de este colaborador.</td></tr>'}
+   </tbody></table></div></div>
+  <p class="hint" style="margin-top:12px">Una vigencia está «Por vencer» cuando faltan 30 días o menos. Un colaborador con documentación vencida o sin registrar no puede asignarse a una cuadrilla.</p></div>`;
+};
 
 V.alertas=()=>`${navbar()}${crumbs([['Personal','personal'],['Alertas de documentación']])}
  <div class="page"><div class="phead"><div><h1>Alertas de documentación</h1>

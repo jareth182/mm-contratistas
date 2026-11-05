@@ -462,9 +462,7 @@ namespace MymContratistas.Api.Controllers
             return Ok(lista.Select(t =>
             {
                 vigencias.TryGetValue(t.Id, out var ultimas);
-                object Documento(string tipo) => ultimas != null && ultimas.TryGetValue(tipo, out var v)
-                    ? new { estado = VigenciaDocumento.EstadoAl(v.FechaVencimiento, hoy), vencimiento = (DateOnly?)v.FechaVencimiento }
-                    : new { estado = "Sin registrar", vencimiento = (DateOnly?)null };
+                object Documento(string tipo) => VigenciasDocumentales.Resumen(ultimas, tipo, hoy);
                 var impedimento = VigenciasDocumentales.Impedimento(t.NombreCompleto, ultimas, hoy);
                 return new
                 {
@@ -560,7 +558,7 @@ namespace MymContratistas.Api.Controllers
         };
 
         // Devuelve el mensaje de error o null si el archivo es un PDF, JPG o PNG válido de hasta 10 MB
-        private static async Task<string?> ValidarDocumento(IFormFile archivo)
+        internal static async Task<string?> ValidarDocumento(IFormFile archivo)
         {
             var extension = Path.GetExtension(archivo.FileName).ToLowerInvariant();
             if (extension != ".pdf" && extension != ".jpg" && extension != ".jpeg" && extension != ".png")
