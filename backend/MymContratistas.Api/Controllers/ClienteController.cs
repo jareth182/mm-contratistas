@@ -172,24 +172,39 @@ namespace MymContratistas.Api.Controllers
 
         // GET: api/cliente/obras/{id}/gastos  (HU21: resumen acumulado por partida y detalle de gastos)
         // Solo gastos vigentes: los anulados no se listan ni suman. No incluye presupuesto, saldos, pagos al personal ni márgenes.
+        // El resumen y el total abarcan todos los gastos vigentes; los filtros y la paginación (HT-07) solo afectan al detalle.
         [HttpGet("obras/{id}/gastos")]
-        public async Task<IActionResult> GastosDeObra(int id)
+        public async Task<IActionResult> GastosDeObra(int id, [FromQuery] FiltroListado? filtro = null)
         {
+            filtro ??= new FiltroListado();
             var obra = await (await ObrasDelClienteAsync()).Where(o => o.Id == id)
                 .Select(o => new { o.Id, o.Nombre, o.AvancePorcentaje })
                 .FirstOrDefaultAsync();
             if (obra == null) return SinPermiso();
+            var errorFiltro = filtro.Validar(out var desde, out var hasta);
+            if (errorFiltro != null) return BadRequest(errorFiltro);
 
-            var gastos = (await _context.Gastos.Where(g => g.ObraId == id && g.Estado != EstadoAnulado).ToListAsync())
+            var vigentes = await _context.Gastos.Where(g => g.ObraId == id && g.Estado != EstadoAnulado).ToListAsync();
+
+            var detalle = vigentes.AsEnumerable();
+            if (filtro.PartidaElegida != null) detalle = detalle.Where(g => g.PartidaNombre == filtro.PartidaElegida);
+            if (filtro.Texto != null)
+                detalle = detalle.Where(g => g.Concepto.ToLowerInvariant().Contains(filtro.Texto) || g.Proveedor.ToLowerInvariant().Contains(filtro.Texto));
+            var coinciden = detalle.Where(g => FiltroListado.EnRango(ObrasController.FechaOrden(g.Fecha), desde, hasta))
                 .OrderByDescending(g => ObrasController.FechaOrden(g.Fecha)).ThenByDescending(g => g.Id).ToList();
+            var pagina = Paginacion.Paginar(coinciden, filtro.Pagina, filtro.Tamano);
+
             return Ok(new
             {
                 obra,
-                total = gastos.Sum(g => g.Monto),
-                resumen = gastos.GroupBy(g => g.PartidaNombre)
+                total = vigentes.Sum(g => g.Monto),
+                cantidad = vigentes.Count,
+                resumen = vigentes.GroupBy(g => g.PartidaNombre)
                     .Select(p => new { partida = p.Key, total = p.Sum(g => g.Monto), cantidad = p.Count() })
                     .OrderByDescending(p => p.total).ThenBy(p => p.partida).ToList(),
-                gastos = gastos.Select(g => new
+                filtrado = new { cantidad = coinciden.Count, subtotal = coinciden.Sum(g => g.Monto) },
+                paginacion = pagina.Info,
+                gastos = pagina.Items.Select(g => new
                 {
                     id = g.Id,
                     fecha = g.Fecha,

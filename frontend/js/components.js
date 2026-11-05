@@ -147,3 +147,33 @@ function hiloComentarios(comentarios, acciones) {
       ${acciones ? acciones(r, respuestas.length) : ''}</div>`;
   }).join('');
 }
+
+// Paginador de un listado (HT-07): «info» es el objeto «paginacion» que devuelve la API
+function pagerHtml(info, clave) {
+  if (!info) return '';
+  const desde = info.total === 0 ? 0 : (info.pagina - 1) * info.tamano + 1;
+  const hasta = Math.min(info.total, info.pagina * info.tamano);
+  const boton = (n, texto, activo) => `<button class="btn ghost sm" ${activo ? `onclick="irPaginaLista('${clave}',${n})"` : 'disabled'}>${texto}</button>`;
+  return `<div style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:10px 14px;border-top:1px solid var(--line-2)">
+    <span class="hint">${info.total ? `Mostrando ${desde}–${hasta} de ${info.total}` : 'Sin resultados'}</span>
+    <span style="display:flex;gap:8px;align-items:center">${boton(info.pagina - 1, '‹ Anterior', info.pagina > 1)}
+      <span class="hint">Página ${info.pagina} de ${info.totalPaginas}</span>${boton(info.pagina + 1, 'Siguiente ›', info.pagina < info.totalPaginas)}</span></div>`;
+}
+
+// Barra de filtros de un listado: texto, estado y partida opcionales, y rango de fechas
+function filtrosHtml(clave, { estado = false, partidas = null, buscar = 'Concepto o proveedor' } = {}) {
+  const f = filtroDe(clave);
+  const campo = 'padding:6px 10px;border:1px solid var(--line);font-family:var(--b)';
+  const enter = `onkeydown="if(event.key==='Enter')aplicarFiltroLista('${clave}')"`;
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;padding:12px 14px;border-bottom:1px solid var(--line-2)">
+    <div class="f" style="margin:0"><label for="${clave}_q">Buscar</label><input id="${clave}_q" value="${esc(f.q)}" maxlength="100" placeholder="${esc(buscar)}" style="${campo}" ${enter}></div>
+    ${estado ? `<div class="f" style="margin:0"><label for="${clave}_estado">Estado</label><select id="${clave}_estado" style="${campo}">
+      <option value="">Todos</option><option ${f.estado === 'Registrado' ? 'selected' : ''}>Registrado</option><option ${f.estado === 'Anulado' ? 'selected' : ''}>Anulado</option></select></div>` : ''}
+    ${partidas ? `<div class="f" style="margin:0"><label for="${clave}_partida">Partida</label><select id="${clave}_partida" style="${campo}">
+      <option value="">Todas</option>${partidas.map(p => `<option ${f.partida === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></div>` : ''}
+    <div class="f" style="margin:0"><label for="${clave}_desde">Desde</label><input id="${clave}_desde" type="date" value="${esc(f.desde)}" style="${campo}"></div>
+    <div class="f" style="margin:0"><label for="${clave}_hasta">Hasta</label><input id="${clave}_hasta" type="date" value="${esc(f.hasta)}" style="${campo}"></div>
+    <button class="btn sm" onclick="aplicarFiltroLista('${clave}')">Filtrar</button>
+    ${hayFiltros(clave) ? `<button class="btn ghost sm" onclick="limpiarFiltroLista('${clave}')">Limpiar</button>` : ''}
+  </div>`;
+}

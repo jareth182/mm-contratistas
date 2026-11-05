@@ -834,17 +834,35 @@ namespace MymContratistas.Api.Controllers
         };
 
         // GET: api/obras/{obraId}/gastos  (del más reciente al más antiguo, con el saldo de cada partida)
+        // Filtros y paginación estándar (HT-07). «resumen» cuenta todo lo que cumple los filtros, no solo la página.
         [HttpGet("{obraId}/gastos")]
-        public async Task<IActionResult> ListarGastos(int obraId)
+        public async Task<IActionResult> ListarGastos(int obraId, [FromQuery] FiltroListado? filtro = null)
         {
+            filtro ??= new FiltroListado();
             if (!await _context.Obras.AnyAsync(o => o.Id == obraId)) return NotFound("La obra no existe.");
+            var errorFiltro = filtro.Validar(out var desde, out var hasta);
+            if (errorFiltro != null) return BadRequest(errorFiltro);
 
-            var gastos = await _context.Gastos.Where(g => g.ObraId == obraId).ToListAsync();
+            var consulta = _context.Gastos.Where(g => g.ObraId == obraId);
+            if (filtro.EstadoElegido != null) consulta = consulta.Where(g => g.Estado == filtro.EstadoElegido);
+            if (filtro.PartidaElegida != null) consulta = consulta.Where(g => g.PartidaNombre == filtro.PartidaElegida);
+            if (filtro.Texto != null)
+            {
+                var texto = filtro.Texto;
+                consulta = consulta.Where(g => g.Concepto.ToLower().Contains(texto) || g.Proveedor.ToLower().Contains(texto) || g.NumeroComprobante.ToLower().Contains(texto));
+            }
+
+            var coinciden = (await consulta.ToListAsync()).Where(g => FiltroListado.EnRango(FechaOrden(g.Fecha), desde, hasta))
+                .OrderByDescending(g => FechaOrden(g.Fecha)).ThenByDescending(g => g.Id).ToList();
+            var pagina = Paginacion.Paginar(coinciden, filtro.Pagina, filtro.Tamano);
+
             var partidas = await _context.Partidas.Where(p => p.ObraId == obraId).OrderBy(p => p.Id).ToListAsync();
             var consumos = await Consumos(obraId);
             return Ok(new
             {
-                gastos = gastos.OrderByDescending(g => FechaOrden(g.Fecha)).ThenByDescending(g => g.Id).Select(ProyectarGasto),
+                gastos = pagina.Items.Select(ProyectarGasto),
+                paginacion = pagina.Info,
+                resumen = new { cantidad = coinciden.Count, montoVigente = coinciden.Where(g => g.Estado != "Anulado").Sum(g => g.Monto) },
                 partidas = partidas.Select(p => new
                 {
                     id = p.Id,
@@ -968,17 +986,32 @@ namespace MymContratistas.Api.Controllers
 
         // GET: api/obras/{obraId}/pagos  (del más reciente al más antiguo, con la cuadrilla activa y el saldo de mano de obra)
         [HttpGet("{obraId}/pagos")]
-        public async Task<IActionResult> ListarPagos(int obraId)
+        public async Task<IActionResult> ListarPagos(int obraId, [FromQuery] FiltroListado? filtro = null)
         {
+            filtro ??= new FiltroListado();
             if (!await _context.Obras.AnyAsync(o => o.Id == obraId)) return NotFound("La obra no existe.");
+            var errorFiltro = filtro.Validar(out var desde, out var hasta);
+            if (errorFiltro != null) return BadRequest(errorFiltro);
 
-            var pagos = await _context.Pagos.Where(p => p.ObraId == obraId).ToListAsync();
+            var consulta = _context.Pagos.Where(p => p.ObraId == obraId);
+            if (filtro.EstadoElegido != null) consulta = consulta.Where(p => p.Estado == filtro.EstadoElegido);
+            if (filtro.Texto != null)
+            {
+                var texto = filtro.Texto;
+                consulta = consulta.Where(p => p.ColaboradorNombre.ToLower().Contains(texto) || p.Periodo.ToLower().Contains(texto));
+            }
+            var coinciden = (await consulta.ToListAsync()).Where(p => FiltroListado.EnRango(FechaOrden(p.FechaPago), desde, hasta))
+                .OrderByDescending(p => FechaOrden(p.FechaPago)).ThenByDescending(p => p.Id).ToList();
+            var pagina = Paginacion.Paginar(coinciden, filtro.Pagina, filtro.Tamano);
+
             var cuadrilla = await _context.Cuadrilla.Where(c => c.ObraId == obraId && c.FechaSalida == null).OrderBy(c => c.NombreCompleto).ToListAsync();
             var partidas = await _context.Partidas.Where(p => p.ObraId == obraId).ToListAsync();
             var manoDeObra = partidas.FirstOrDefault(EsManoDeObra);
             return Ok(new
             {
-                pagos = pagos.OrderByDescending(p => FechaOrden(p.FechaPago)).ThenByDescending(p => p.Id).Select(ProyectarPago),
+                pagos = pagina.Items.Select(ProyectarPago),
+                paginacion = pagina.Info,
+                resumen = new { cantidad = coinciden.Count, montoVigente = coinciden.Where(p => p.Estado != "Anulado").Sum(p => p.Monto) },
                 colaboradores = cuadrilla.Select(c => new { id = c.Id, nombreCompleto = c.NombreCompleto, especialidad = c.Especialidad, jornal = c.Jornal }),
                 partida = manoDeObra == null ? null : new { nombre = manoDeObra.Nombre, saldo = Saldo(manoDeObra, await Consumos(obraId)) }
             });

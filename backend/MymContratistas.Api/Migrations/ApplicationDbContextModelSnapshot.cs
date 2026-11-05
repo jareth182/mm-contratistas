@@ -78,7 +78,7 @@ namespace MymContratistas.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("HitoId");
+                    b.HasIndex("HitoId", "Fecha");
 
                     b.ToTable("AvancesHito");
                 });
@@ -201,7 +201,7 @@ namespace MymContratistas.Api.Migrations
 
                     b.HasIndex("ComentarioPadreId");
 
-                    b.HasIndex("HitoId");
+                    b.HasIndex("HitoId", "Fecha");
 
                     b.ToTable("ComentariosHito");
                 });
@@ -354,7 +354,9 @@ namespace MymContratistas.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ObraId");
+                    b.HasIndex("ObraId", "Estado");
+
+                    b.HasIndex("ObraId", "PartidaNombre");
 
                     b.ToTable("Gastos");
                 });
@@ -401,7 +403,7 @@ namespace MymContratistas.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ObraId");
+                    b.HasIndex("ObraId", "Orden");
 
                     b.ToTable("Hitos");
                 });
@@ -611,7 +613,9 @@ namespace MymContratistas.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ObraId");
+                    b.HasIndex("ObraId", "Estado");
+
+                    b.HasIndex("ObraId", "PartidaNombre");
 
                     b.ToTable("Pagos");
                 });

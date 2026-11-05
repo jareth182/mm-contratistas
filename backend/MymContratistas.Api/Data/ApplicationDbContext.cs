@@ -49,7 +49,14 @@ namespace MymContratistas.Api.Data // <-- Aquí estaba el detalle
                 .HasMany(h => h.Comentarios).WithOne(c => c.Hito).HasForeignKey(c => c.HitoId).OnDelete(DeleteBehavior.Cascade);
             modelBuilder.Entity<ComentarioHito>()
                 .HasOne(c => c.ComentarioPadre).WithMany().HasForeignKey(c => c.ComentarioPadreId).OnDelete(DeleteBehavior.NoAction);
-            modelBuilder.Entity<ComentarioHito>().HasIndex(c => c.HitoId);
+            modelBuilder.Entity<ComentarioHito>().HasIndex(c => new { c.HitoId, c.Fecha });
+            // Índices de los listados de seguimiento y gastos (HT-07): cada uno empieza por la obra o el hito de la consulta
+            modelBuilder.Entity<Gasto>().HasIndex(g => new { g.ObraId, g.Estado });
+            modelBuilder.Entity<Gasto>().HasIndex(g => new { g.ObraId, g.PartidaNombre });
+            modelBuilder.Entity<Pago>().HasIndex(p => new { p.ObraId, p.Estado });
+            modelBuilder.Entity<Pago>().HasIndex(p => new { p.ObraId, p.PartidaNombre });
+            modelBuilder.Entity<Hito>().HasIndex(h => new { h.ObraId, h.Orden });
+            modelBuilder.Entity<AvanceHito>().HasIndex(a => new { a.HitoId, a.Fecha });
             modelBuilder.Entity<EnvioAlertaDocumental>().HasIndex(e => e.Fecha).IsUnique();
             // Control de duplicados (único por evento y destinatario) y consultas de la campana de cada usuario
             modelBuilder.Entity<Notificacion>().HasIndex(n => n.ClaveDeduplicacion).IsUnique();
