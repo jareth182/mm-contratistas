@@ -243,6 +243,34 @@ namespace MymContratistas.Api.Migrations
                     b.ToTable("Documentos");
                 });
 
+            modelBuilder.Entity("MymContratistas.Api.Models.EnvioAlertaDocumental", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Alertas")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Destinatarios")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("EnviadoEn")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("Fecha")
+                        .HasColumnType("date");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Fecha")
+                        .IsUnique();
+
+                    b.ToTable("EnviosAlertaDocumental");
+                });
+
             modelBuilder.Entity("MymContratistas.Api.Models.FotoAvance", b =>
                 {
                     b.Property<int>("Id")
