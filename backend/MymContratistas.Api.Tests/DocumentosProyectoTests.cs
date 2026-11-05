@@ -61,7 +61,7 @@ namespace MymContratistas.Api.Tests
 
         private string CarpetaDocumentos => Path.Combine(Carpeta, "Uploads", "documentos");
 
-        private ClienteController PanelDelCliente(int? usuarioId = null) => new(Db)
+        private ClienteController PanelDelCliente(int? usuarioId = null) => new(Db, Notificaciones.Silenciosa())
         {
             ControllerContext = new ControllerContext
             {

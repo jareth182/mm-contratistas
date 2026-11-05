@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MymContratistas.Api.Data;
 using MymContratistas.Api.Models;
+using MymContratistas.Api.Services;
 
 namespace MymContratistas.Api.Controllers
 {
@@ -13,10 +14,12 @@ namespace MymContratistas.Api.Controllers
     public class ClienteController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
+        private readonly NotificacionHitoService _notificacion;
 
-        public ClienteController(ApplicationDbContext context)
+        public ClienteController(ApplicationDbContext context, NotificacionHitoService notificacion)
         {
             _context = context;
+            _notificacion = notificacion;
         }
 
         // GET: api/cliente/obras
@@ -96,6 +99,7 @@ namespace MymContratistas.Api.Controllers
             return Ok(new
             {
                 hito,
+                comentarios = (await ComentariosDeAsync(id)).Select(x => x.Vista()),
                 avances = avances.Select(a => new
                 {
                     a.Id,
@@ -104,6 +108,51 @@ namespace MymContratistas.Api.Controllers
                     a.Fecha,
                     Fotos = a.Fotos.OrderBy(f => f.Id).Select(f => new { f.Id, Nombre = f.NombreOriginal })
                 })
+            });
+        }
+
+        public class ComentarioDto
+        {
+            public string? Texto { get; set; }
+        }
+
+        private async Task<List<ComentarioHito>> ComentariosDeAsync(int hitoId) =>
+            await _context.ComentariosHito.Where(x => x.HitoId == hitoId).OrderBy(x => x.Fecha).ThenBy(x => x.Id).ToListAsync();
+
+        // POST: api/cliente/hitos/{id}/comentarios  (HU22: comentario del cliente sobre un hito de su obra)
+        [HttpPost("hitos/{id}/comentarios")]
+        public async Task<IActionResult> Comentar(int id, [FromBody] ComentarioDto? dto)
+        {
+            var hito = await (await HitosDelClienteAsync()).Include(h => h.Obra).FirstOrDefaultAsync(h => h.Id == id);
+            if (hito == null) return SinPermiso();
+
+            var error = ComentarioHito.Validar(dto?.Texto);
+            if (error != null) return BadRequest(error);
+
+            int.TryParse(User?.FindFirstValue(ClaimTypes.NameIdentifier), out var usuarioId);
+            var autor = await _context.Usuarios.Where(u => u.Id == usuarioId).FirstOrDefaultAsync();
+            var comentario = new ComentarioHito
+            {
+                HitoId = id,
+                Texto = dto!.Texto!.Trim(),
+                Fecha = DateTime.UtcNow,
+                AutorUsuarioId = usuarioId,
+                AutorNombre = autor?.NombreCompleto is { Length: > 0 } nombre ? nombre : User?.FindFirstValue(ClaimTypes.Name) ?? "Cliente",
+                EsPersonal = false
+            };
+            _context.ComentariosHito.Add(comentario);
+            await _context.SaveChangesAsync();
+
+            // Gerente de Operaciones activo: el aviso nunca impide que el comentario quede registrado
+            var correos = await _context.Usuarios
+                .Where(u => u.Rol.Nombre == NombresRol.Gerente && u.Estado == "Activo" && u.Correo != "")
+                .Select(u => u.Correo).ToListAsync();
+            var avisado = await _notificacion.ComentarioDelClienteAsync(hito.Obra!, hito, comentario, correos);
+
+            return Ok(new
+            {
+                mensaje = avisado ? "Comentario enviado correctamente. El equipo de M/M Contratistas fue notificado." : "Comentario enviado correctamente.",
+                comentario = comentario.Vista()
             });
         }
 

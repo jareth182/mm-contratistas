@@ -166,6 +166,46 @@ namespace MymContratistas.Api.Migrations
                     b.ToTable("Cuadrilla");
                 });
 
+            modelBuilder.Entity("MymContratistas.Api.Models.ComentarioHito", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AutorNombre")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("AutorUsuarioId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ComentarioPadreId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("EsPersonal")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("Fecha")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("HitoId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Texto")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ComentarioPadreId");
+
+                    b.HasIndex("HitoId");
+
+                    b.ToTable("ComentariosHito");
+                });
+
             modelBuilder.Entity("MymContratistas.Api.Models.Documento", b =>
                 {
                     b.Property<int>("Id")
@@ -859,6 +899,24 @@ namespace MymContratistas.Api.Migrations
                     b.Navigation("Trabajador");
                 });
 
+            modelBuilder.Entity("MymContratistas.Api.Models.ComentarioHito", b =>
+                {
+                    b.HasOne("MymContratistas.Api.Models.ComentarioHito", "ComentarioPadre")
+                        .WithMany()
+                        .HasForeignKey("ComentarioPadreId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("MymContratistas.Api.Models.Hito", "Hito")
+                        .WithMany("Comentarios")
+                        .HasForeignKey("HitoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ComentarioPadre");
+
+                    b.Navigation("Hito");
+                });
+
             modelBuilder.Entity("MymContratistas.Api.Models.Documento", b =>
                 {
                     b.HasOne("MymContratistas.Api.Models.Obra", "Obra")
@@ -1001,6 +1059,8 @@ namespace MymContratistas.Api.Migrations
             modelBuilder.Entity("MymContratistas.Api.Models.Hito", b =>
                 {
                     b.Navigation("Avances");
+
+                    b.Navigation("Comentarios");
                 });
 
             modelBuilder.Entity("MymContratistas.Api.Models.Obra", b =>

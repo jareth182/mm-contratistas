@@ -6,9 +6,9 @@ ST.perfil = ST.usuario ? (ST.usuario.rol === 'Cliente' ? 'cli' : 'adm') : 'pub';
 function go(v){ST.formUsuario=null;ST.formTrabajador=null;ST.formServicio=null;ST.formHito=null;ST.formProyecto=null;ST.formObra=null;ST.finalizando=false;ST.v=v;ST.msg=null;ST.menu=null;ST.nav=false;draw();window.scrollTo({top:0})}
 function abrirObra(id){ST.obraId=id;ST.formHito=null;ST.hitoEditando=null;ST.registrandoAvance=false;ST.formAvance=null;ST.partidaEditando=null;ST.partidaDetalle=null;ST.tab='hitos';go('obra')}
 // Seguimiento de obra del cliente (HU20)
-function abrirSeguimiento(id){ST.obraCliId=id;ST.hitoCliId=null;go('c-seg')}
+function abrirSeguimiento(id){ST.obraCliId=id;ST.hitoCliId=null;ST.avisoComentario=null;go('c-seg')}
 function verDetalleHitoCliente(id){
-  ST.hitoCliId=ST.hitoCliId===id?null:id;ST.msg=null;
+  ST.hitoCliId=ST.hitoCliId===id?null:id;ST.msg=null;ST.avisoComentario=null;
   draw().then(()=>{const d=document.getElementById('detalle_hito_cli');if(d)d.scrollIntoView({block:'start'})});
 }
 // Gastos del cliente (HU21)
@@ -371,8 +371,76 @@ async function eliminarHito(id) {
   }
 }
 
+// Comentarios de un hito (HU22)
+function contarCaracteres(caja, idContador) {
+  const contador = document.getElementById(idContador);
+  if (contador) contador.innerText = caja.value.length;
+}
+
+// Envía un comentario o una respuesta; devuelve el JSON, o null si mostró el error en el propio formulario
+async function publicarComentario(url, texto, idError, idBoton) {
+  const error = document.getElementById(idError);
+  const mostrar = t => { error.innerHTML = `<div class="msg bad">${esc(t)}</div>`; };
+  const boton = document.getElementById(idBoton);
+  if (!texto) { mostrar('Escriba el comentario antes de enviarlo.'); return null; }
+  if (texto.length > 500) { mostrar('El comentario no puede superar los 500 caracteres.'); return null; }
+  error.innerHTML = '';
+  if (boton) boton.disabled = true;
+  try {
+    const r = await apiFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto }) });
+    if (!r.ok) {
+      mostrar([400, 403, 404].includes(r.status) ? ((await r.text()) || 'No se pudo enviar.') : 'No se pudo enviar. Intente nuevamente.');
+      if (boton) boton.disabled = false;
+      return null;
+    }
+    return await r.json();
+  } catch (e) {
+    mostrar('Error de conexión con el servidor.');
+    if (boton) boton.disabled = false;
+    return null;
+  }
+}
+
+function irA(id) {
+  const el = document.getElementById(id);
+  if (el) el.scrollIntoView({ block: 'center' });
+}
+
+// Cliente: comenta en el hito abierto
+async function enviarComentarioCliente(hitoId) {
+  const texto = document.getElementById('cmt_texto').value.trim();
+  const datos = await publicarComentario(`${API}/api/cliente/hitos/${hitoId}/comentarios`, texto, 'cmt_error', 'cmt_enviar');
+  if (!datos) return;
+  ST.avisoComentario = `<div class="msg ok" id="aviso_comentario">${esc(datos.mensaje)}</div>`;
+  await draw();
+  irA('aviso_comentario');
+}
+
+// Personal: responde un comentario del cliente
+function responderComentario(id) {
+  ST.respondiendoA = id;
+  ST.avisoRespuesta = null;
+  draw().then(() => { const c = document.getElementById('resp_texto'); if (c) c.focus(); });
+}
+function cancelarRespuesta() {
+  ST.respondiendoA = null;
+  draw();
+}
+async function enviarRespuesta(comentarioId) {
+  const texto = document.getElementById('resp_texto').value.trim();
+  const datos = await publicarComentario(`${API}/api/obras/comentarios/${comentarioId}/respuestas`, texto, 'resp_error', 'resp_enviar');
+  if (!datos) return;
+  const tipo = /No se pudo|no tiene correo/.test(datos.mensaje) ? 'warn' : 'ok';
+  ST.respondiendoA = null;
+  ST.avisoRespuesta = `<div class="msg ${tipo}" id="aviso_respuesta">${esc(datos.mensaje)}</div>`;
+  await draw();
+  irA('aviso_respuesta');
+}
+
 function seleccionarHito(id) {
   ST.hitoEditando = id;
+  ST.respondiendoA = null;
+  ST.avisoRespuesta = null;
   ST.registrandoAvance = false;
   ST.formAvance = null;
   draw();
@@ -381,6 +449,8 @@ function seleccionarHito(id) {
 
 function cerrarDetalleHito() {
   ST.hitoEditando = null;
+  ST.respondiendoA = null;
+  ST.avisoRespuesta = null;
   ST.registrandoAvance = false;
   ST.formAvance = null;
   draw();

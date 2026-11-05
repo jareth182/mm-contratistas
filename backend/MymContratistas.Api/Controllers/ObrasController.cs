@@ -239,6 +239,7 @@ namespace MymContratistas.Api.Controllers
             var hito = await _context.Hitos.FindAsync(id);
             if (hito == null) return NotFound("El hito no existe.");
             if (TieneAvance(hito)) return BadRequest("No se puede eliminar un hito con avances o gastos asociados.");
+            if (await _context.ComentariosHito.AnyAsync(c => c.HitoId == id)) return BadRequest("No se puede eliminar un hito con comentarios del cliente.");
 
             _context.Hitos.Remove(hito);
             await _context.SaveChangesAsync();
@@ -358,6 +359,62 @@ namespace MymContratistas.Api.Controllers
             var avances = await _context.AvancesHito.Include(a => a.Fotos)
                 .Where(a => a.HitoId == id).OrderByDescending(a => a.Fecha).ThenByDescending(a => a.Id).ToListAsync();
             return Ok(avances.Select(Proyectar));
+        }
+
+        // GET: api/obras/hitos/{id}/comentarios  (HU22: conversación con el cliente, en orden cronológico)
+        [HttpGet("hitos/{id}/comentarios")]
+        public async Task<IActionResult> ComentariosDelHito(int id)
+        {
+            if (!await _context.Hitos.AnyAsync(h => h.Id == id)) return NotFound("El hito no existe.");
+
+            var comentarios = await _context.ComentariosHito.Where(c => c.HitoId == id).OrderBy(c => c.Fecha).ThenBy(c => c.Id).ToListAsync();
+            return Ok(comentarios.Select(c => c.Vista()));
+        }
+
+        public class RespuestaDto
+        {
+            public string? Texto { get; set; }
+        }
+
+        // POST: api/obras/comentarios/{id}/respuestas  (HU22: el personal responde un comentario del cliente)
+        [HttpPost("comentarios/{id}/respuestas")]
+        public async Task<IActionResult> ResponderComentario(int id, [FromBody] RespuestaDto? dto)
+        {
+            var comentario = await _context.ComentariosHito.Include(c => c.Hito).ThenInclude(h => h!.Obra).ThenInclude(o => o!.ClienteRegistro)
+                .FirstOrDefaultAsync(c => c.Id == id);
+            if (comentario == null) return NotFound("El comentario no existe.");
+            if (comentario.EsPersonal) return BadRequest("Solo se puede responder a un comentario del cliente.");
+
+            var error = ComentarioHito.Validar(dto?.Texto);
+            if (error != null) return BadRequest(error);
+
+            int.TryParse(User?.FindFirstValue(ClaimTypes.NameIdentifier), out var usuarioId);
+            var autor = await _context.Usuarios.FirstOrDefaultAsync(u => u.Id == usuarioId);
+            var respuesta = new ComentarioHito
+            {
+                HitoId = comentario.HitoId,
+                ComentarioPadreId = comentario.Id,
+                Texto = dto!.Texto!.Trim(),
+                Fecha = DateTime.UtcNow,
+                AutorUsuarioId = usuarioId,
+                AutorNombre = autor?.NombreCompleto is { Length: > 0 } nombre ? nombre : User?.FindFirstValue(ClaimTypes.Name) ?? "M/M Contratistas",
+                EsPersonal = true
+            };
+            _context.ComentariosHito.Add(respuesta);
+            await _context.SaveChangesAsync();
+
+            // Se avisa a quien hizo el comentario; si su cuenta ya no existe, al correo de la ficha del cliente
+            var correo = await _context.Usuarios.Where(u => u.Id == comentario.AutorUsuarioId).Select(u => u.Correo).FirstOrDefaultAsync();
+            if (string.IsNullOrWhiteSpace(correo)) correo = comentario.Hito!.Obra!.ClienteRegistro?.Correo;
+
+            var mensaje = "Respuesta enviada. El cliente ya puede verla en su panel.";
+            if (string.IsNullOrWhiteSpace(correo))
+                mensaje += " El cliente no tiene correo registrado, por lo que no se le notificó.";
+            else if (await _notificacion.RespuestaAlClienteAsync(comentario.Hito!.Obra!, comentario.Hito, respuesta, correo))
+                mensaje += " Se notificó al cliente por correo.";
+            else
+                mensaje += " No se pudo enviar el correo de aviso al cliente.";
+            return Ok(new { mensaje, respuesta = respuesta.Vista() });
         }
 
         // GET: api/obras/avances/fotos/{id}

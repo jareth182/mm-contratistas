@@ -25,5 +25,9 @@ namespace MymContratistas.Api.Models
         // Historial de avances registrados (HU13)
         [JsonIgnore]
         public List<AvanceHito> Avances { get; set; } = new List<AvanceHito>();
+
+        // Comentarios del cliente y respuestas del personal (HU22)
+        [JsonIgnore]
+        public List<ComentarioHito> Comentarios { get; set; } = new List<ComentarioHito>();
     }
 }

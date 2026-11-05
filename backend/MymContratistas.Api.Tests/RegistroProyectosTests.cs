@@ -335,7 +335,7 @@ namespace MymContratistas.Api.Tests
                 new Claim(ClaimTypes.Name, usuario.NombreCompleto),
                 new Claim(ClaimTypes.Role, NombresRol.Cliente)
             }, "Prueba");
-            return new ClienteController(_db)
+            return new ClienteController(_db, Notificaciones.Silenciosa())
             {
                 ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identidad) } }
             };
