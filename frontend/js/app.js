@@ -5,6 +5,12 @@ ST.perfil = ST.usuario ? (ST.usuario.rol === 'Cliente' ? 'cli' : 'adm') : 'pub';
 /* ================= control ================= */
 function go(v){ST.formUsuario=null;ST.formTrabajador=null;ST.formServicio=null;ST.formHito=null;ST.formProyecto=null;ST.formObra=null;ST.finalizando=false;ST.v=v;ST.msg=null;ST.menu=null;ST.nav=false;draw();window.scrollTo({top:0})}
 function abrirObra(id){ST.obraId=id;ST.formHito=null;ST.hitoEditando=null;ST.registrandoAvance=false;ST.formAvance=null;ST.partidaEditando=null;ST.partidaDetalle=null;ST.tab='hitos';go('obra')}
+// Seguimiento de obra del cliente (HU20)
+function abrirSeguimiento(id){ST.obraCliId=id;ST.hitoCliId=null;go('c-seg')}
+function verDetalleHitoCliente(id){
+  ST.hitoCliId=ST.hitoCliId===id?null:id;ST.msg=null;
+  draw().then(()=>{const d=document.getElementById('detalle_hito_cli');if(d)d.scrollIntoView({block:'start'})});
+}
 function tab(t){ST.tab=t;ST.msg=null;draw()}
 function tog(m,e){e.stopPropagation();ST.menu=ST.menu===m?null:m;draw()}
 function say(t,x){ST.msg=`<div class="msg ${t}">${x}</div>`;draw();
@@ -42,7 +48,8 @@ const imagenesCargadas = new Map();
 async function cargarImagenesProtegidas() {
   const origenes = [
     ['img[data-img-id]', 'imgId', id => `${API}/api/portafolio/imagenes/${id}`, 'p'],
-    ['img[data-foto-avance]', 'fotoAvance', id => `${API}/api/obras/avances/fotos/${id}`, 'a']
+    ['img[data-foto-avance]', 'fotoAvance', id => `${API}/api/obras/avances/fotos/${id}`, 'a'],
+    ['img[data-foto-cliente]', 'fotoCliente', id => `${API}/api/cliente/avances/fotos/${id}`, 'c']
   ];
   for (const [selector, atributo, urlDe, prefijo] of origenes) {
     for (const img of document.querySelectorAll(selector)) {

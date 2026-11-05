@@ -248,7 +248,7 @@ namespace MymContratistas.Api.Tests
             Db.Usuarios.Add(ajeno);
             await Db.SaveChangesAsync();
 
-            Assert.IsType<NotFoundObjectResult>(await PanelDelCliente(ajeno.Id).DescargarDocumento(visible.Id));
+            Assert.Equal(403, Estado(await PanelDelCliente(ajeno.Id).DescargarDocumento(visible.Id)));
             Assert.Empty(Lista(await PanelDelCliente(ajeno.Id).MisObras()));
         }
     }

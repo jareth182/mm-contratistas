@@ -254,7 +254,8 @@ namespace MymContratistas.Api.Controllers
         public const int MaximoFotosPorAvance = 5;
         private const int MaximoDescripcionAvance = 1000;
 
-        private static string CarpetaAvances() => Path.Combine(Directory.GetCurrentDirectory(), "Uploads", "avances");
+        private static string CarpetaAvances() => CarpetaDeAvances;
+        internal static string CarpetaDeAvances => Path.Combine(Directory.GetCurrentDirectory(), "Uploads", "avances");
 
         private static object Proyectar(AvanceHito a) => new
         {
