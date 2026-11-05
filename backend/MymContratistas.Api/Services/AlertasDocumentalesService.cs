@@ -63,8 +63,19 @@ namespace MymContratistas.Api.Services
 
         private async Task RegistrarAsync(DateOnly hoy, int alertas, int destinatarios)
         {
-            _context.EnviosAlertaDocumental.Add(new EnvioAlertaDocumental { Fecha = hoy, EnviadoEn = DateTime.UtcNow, Alertas = alertas, Destinatarios = destinatarios });
-            await _context.SaveChangesAsync();
+            var registro = new EnvioAlertaDocumental { Fecha = hoy, EnviadoEn = DateTime.UtcNow, Alertas = alertas, Destinatarios = destinatarios };
+            _context.EnviosAlertaDocumental.Add(registro);
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                // Si otra instancia de la aplicación registró el día primero no hay nada más que hacer: los correos ya están
+                // protegidos contra duplicados por NotificacionService. Cualquier otro error sí se propaga.
+                _context.Entry(registro).State = EntityState.Detached;
+                if (!await _context.EnviosAlertaDocumental.AnyAsync(e => e.Fecha == hoy)) throw;
+            }
         }
     }
 }

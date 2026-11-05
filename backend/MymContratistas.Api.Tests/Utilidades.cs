@@ -53,9 +53,12 @@ namespace MymContratistas.Api.Tests
     {
         public List<(string Para, string Asunto, string Cuerpo)> Enviados { get; } = new();
         public HashSet<string> Falla { get; } = new(StringComparer.OrdinalIgnoreCase);
+        // Se ejecuta justo antes de cada envío (permite simular qué pasa en otro proceso mientras se envía)
+        public Action? AntesDeEnviar { get; set; }
 
         public Task EnviarAsync(string destinatario, string asunto, string cuerpoHtml, IReadOnlyList<AdjuntoCorreo>? adjuntos = null)
         {
+            AntesDeEnviar?.Invoke();
             if (Falla.Contains(destinatario)) throw new InvalidOperationException("SMTP no disponible");
             Enviados.Add((destinatario, asunto, cuerpoHtml));
             return Task.CompletedTask;
