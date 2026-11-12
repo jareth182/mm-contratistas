@@ -76,6 +76,8 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    // Crea/actualiza las tablas en la base de datos (necesario en el primer despliegue)
+    context.Database.Migrate();
     var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher<Usuario>>();
     DbSeeder.SembrarUsuarios(context, hasher, builder.Configuration["Seed:Password"]);
     DbSeeder.SembrarServicios(context);
@@ -87,10 +89,15 @@ if (app.Environment.IsDevelopment())
 }
 
 // 3. Aplicar CORS antes de las rutas
+// En Render el HTTPS lo termina su proxy, por eso la redirección solo se usa en desarrollo
 app.UseMiddleware<EncabezadosDeSeguridad>();
 app.UseCors("PermitirTodo");
 
-app.UseHttpsRedirection();
+if (app.Environment.IsDevelopment()) app.UseHttpsRedirection();
+
+// Sirve el frontend (carpeta wwwroot) desde el mismo servicio
+app.UseDefaultFiles();
+app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

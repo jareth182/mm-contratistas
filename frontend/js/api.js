@@ -1,5 +1,6 @@
 /* ================= api y sesión ================= */
-const API = 'http://localhost:5067';
+// Abierto como archivo (desarrollo local) usa la API local; desplegado, el frontend y la API comparten dominio
+const API = location.protocol === 'file:' ? 'http://localhost:5067' : '';
 const SESION_KEY = 'mym_sesion';
 
 // Vistas que requieren sesión y roles que pueden verlas
